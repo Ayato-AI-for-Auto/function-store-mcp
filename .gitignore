@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.flakes/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# DuckDB / SQLite / Local DB
+*.db
+*.duckdb
+*.wal
+*.tmp
+*.parquet
+
+# Data & Settings (Critical: Never publish these!)
+data/
+settings.json
+*.json
+!pyproject.toml
+!package.json
+
+# Logs & Temporary files
+*.log
+test_out*.txt
+test_err*.txt
+pytest_fail*.txt
+*.bak
+*.swp
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.mcp_deps/
+.mcp_envs/
+
+# Node/Frontend (if any)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

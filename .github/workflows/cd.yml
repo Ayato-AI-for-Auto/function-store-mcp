@@ -1,0 +1,38 @@
+name: CD (Release)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv pip install -e .
+
+      - name: Build Executable
+        run: |
+          # Build with PyInstaller. 
+          # Note: Flet and other heavy libs might need special care, but this is the MVP.
+          uv run pyinstaller --onefile --windowed --name solo-mcp frontend/dashboard.py
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/solo-mcp.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

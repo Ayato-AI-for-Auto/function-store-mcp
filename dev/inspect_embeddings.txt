@@ -1,0 +1,3 @@
+--- Embeddings Table ---
+Row Count: 5
+Columns: ['function_id', 'vector']
