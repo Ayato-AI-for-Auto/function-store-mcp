@@ -3,8 +3,8 @@ import time
 import random
 import gc
 from pathlib import Path
-import solo_mcp.config
-from solo_mcp.database import init_db
+import mcp_core.config
+from mcp_core.database import init_db
 
 # Use session-wide counter to ensure unique paths even on fast CPU
 _counter = 0
@@ -30,8 +30,8 @@ def setup_db_isolation(monkeypatch):
     test_db_path = TEST_DATA_DIR / f"test_{unique_id}.duckdb"
     
     # 1. Patch the global config source of truth
-    # All modules use solo_mcp.database.get_db_connection() which now looks up solo_mcp.config.DB_PATH
-    monkeypatch.setattr(solo_mcp.config, "DB_PATH", test_db_path)
+    # All modules use mcp_core.database.get_db_connection() which now looks up mcp_core.config.DB_PATH
+    monkeypatch.setattr(mcp_core.config, "DB_PATH", test_db_path)
     
     # 2. Force initialization of THIS fresh DB
     init_db()

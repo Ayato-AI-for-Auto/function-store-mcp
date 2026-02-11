@@ -1,14 +1,16 @@
-import os
 import logging
 from typing import Optional, Tuple
+from google import genai
+from google.genai import types
+from mcp_core import config
 
 logger = logging.getLogger(__name__)
 
-# Model ID (TranslateGemma 4B)
-MODEL_ID = "google/translategemma-4b-it"
+# Model ID for translation (High-quality Gemma 3)
+MODEL_ID = "models/gemma-3-27b-it"
 
 class TranslationService:
-    """Service for handling translations using TranslateGemma."""
+    """Service for handling translations using Google GenAI API."""
     
     _instance = None
     
@@ -22,64 +24,19 @@ class TranslationService:
         if self._initialized:
             return
             
-        self.pipe = None
-        self.loaded = False
+        self.client = None
         self._initialized = True
         
-        # Import HF_TOKEN from config
-        try:
-            from solo_mcp.config import HF_TOKEN
-            self.hf_token = HF_TOKEN
-        except ImportError:
-            self.hf_token = os.getenv("HF_TOKEN")
-
-    def load_model(self):
-        """Lazy load the TranslateGemma model."""
-        if self.loaded:
-            return True
-        
-        if not self.hf_token:
-            logger.warning("[TranslationService] No HF_TOKEN found. Translation disabled.")
-            return False
-
-        logger.info(f"[TranslationService] Loading {MODEL_ID}...")
-        try:
-            import torch
-            from transformers import pipeline, BitsAndBytesConfig
-            # Configure 4-bit quantization to save VRAM (requires bitsandbytes)
+        if config.GOOGLE_API_KEY:
             try:
-                bnb_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                )
-                
-                self.pipe = pipeline(
-                    "text-generation",
-                    model=MODEL_ID,
-                    token=self.hf_token,
-                    model_kwargs={"quantization_config": bnb_config, "low_cpu_mem_usage": True},
-                    device_map="cuda",
-                )
-                logger.info("[TranslationService] Model loaded successfully on GPU (4-bit).")
-            except Exception as gpu_e:
-                logger.warning(f"[TranslationService] GPU Load Failed: {gpu_e}. Falling back to CPU...")
-                # Fallback to CPU without quantization
-                self.pipe = pipeline(
-                    "text-generation",
-                    model=MODEL_ID,
-                    token=self.hf_token,
-                    model_kwargs={"low_cpu_mem_usage": True},
-                    device_map="cpu",
-                )
-                logger.info("[TranslationService] Model loaded successfully on CPU.")
-            
-            self.loaded = True
-            return True
-        except Exception as e:
-            logger.error(f"[TranslationService] CRITICAL: Model load failed: {e}")
-            return False
+                self.client = genai.Client(api_key=config.GOOGLE_API_KEY)
+                logger.info(f"[TranslationService] Initialized with model '{MODEL_ID}'")
+            except Exception as e:
+                logger.error(f"[TranslationService] Client Init Failed: {e}")
+
+    def is_available(self) -> bool:
+        """Check if translation service is ready to use."""
+        return self.client is not None and config.FS_ENABLE_TRANSLATION
 
     def detect_language(self, text: str) -> str:
         """Detect if text is Japanese or English based on character analysis."""
@@ -88,28 +45,30 @@ class TranslationService:
         return "en"
 
     def translate(self, text: str, target_lang: str = "ja") -> Optional[str]:
-        """Translate text to the target language."""
-        if not self.load_model():
+        """Translate text to the target language via API."""
+        if not self.is_available():
             return None
         
         lang_name = "Japanese" if target_lang == "ja" else "English"
-        # TranslateGemma prompt format
-        prompt = f"Translate the following technical description to {lang_name}:\n\n{text}\n\nTranslation:"
+        prompt = f"Translate the following technical description to {lang_name}. Output ONLY the translated text.\n\n{text}"
 
         try:
-            outputs = self.pipe(
-                prompt,
-                max_new_tokens=256,
-                do_sample=False,
-                num_beams=1,
+            response = self.client.models.generate_content(
+                model=MODEL_ID,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    top_p=0.95,
+                    max_output_tokens=512,
+                )
             )
-            result = outputs[0]["generated_text"]
-            # Extract only the translated part after "Translation:"
-            if "Translation:" in result:
-                result = result.split("Translation:")[-1].strip()
-            return result
+            if response.text:
+                return response.text.strip()
+            logger.warning(f"[TranslationService] API Empty Response: {response}")
+            return None
         except Exception as e:
-            logger.error(f"[TranslationService] Translation Error: {e}")
+            logger.error(f"[TranslationService] API Translation Error: {e}")
+            print(f"DEBUG: Translation Error - {type(e).__name__}: {e}")
             return None
 
     def ensure_bilingual(self, description: str, description_en: Optional[str] = None, description_jp: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
@@ -122,6 +81,11 @@ class TranslationService:
         if has_en and has_jp:
             return description_en, description_jp
             
+        # Check availability before trying
+        if not self.is_available():
+            # If not available, we can't do anything, just return what we have
+            return description_en, description_jp
+
         # If both are missing, detect source language from primary description
         if not has_en and not has_jp:
             source_lang = self.detect_language(description)
@@ -141,9 +105,9 @@ class TranslationService:
         return description_en, description_jp
 
     def update_function_descriptions(self, name: str, desc_en: Optional[str], desc_jp: Optional[str]):
-        """Update the database with new descriptions and regenerate embedding if necessary."""
-        from solo_mcp.database import get_db_connection
-        from solo_mcp.embedding import embedding_service
+        """Update the database with new descriptions and regenerate embedding."""
+        from mcp_core.database import get_db_connection
+        from mcp_core.embedding import embedding_service
         import json
         
         conn = get_db_connection()

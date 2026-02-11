@@ -6,12 +6,13 @@ import asyncio
 import json
 import duckdb
 import time
-from solo_mcp.database import init_db
-from solo_mcp.config import DB_PATH, SETTINGS_PATH, BASE_DIR, DATA_DIR
+from mcp_core.database import init_db, Database
+from mcp_core.config import DB_PATH, SETTINGS_PATH, BASE_DIR, DATA_DIR
+from mcp_core.sync_engine import SyncEngine
 
 # Derived Paths
 VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
-SERVER_SCRIPT = BASE_DIR / "solo_mcp" / "server.py"
+SERVER_SCRIPT = BASE_DIR / "mcp_core" / "server.py"
 
 # Localization
 LOCALIZATION = {
@@ -57,6 +58,15 @@ LOCALIZATION = {
         "last_called": "Last called",
         "no_description": "No description",
         "code_label": "Code",
+        "team_tab": "Public Store",
+        "supabase_url": "Supabase URL (Override)",
+        "supabase_key": "Supabase API Key (Override)",
+        "team_id": "Public Project Name",
+        "sync_now": "Sync to Global",
+        "team_desc": "Share your best functions with the world",
+        "sync_success": "Public synchronization complete!",
+        "sync_error": "Sync failed: ",
+        "enable_translation": "Enable Background Translation (Local LLM)",
     },
     "jp": {
         "title": "Function Store MCP - ダッシュボード",
@@ -99,6 +109,15 @@ LOCALIZATION = {
         "last_called": "最終呼び出し",
         "no_description": "説明がありません",
         "code_label": "コード",
+        "team_tab": "パブリック共有",
+        "supabase_url": "Supabase URL (上書き用)",
+        "supabase_key": "Supabase API Key (上書き用)",
+        "team_id": "共有プロジェクト名",
+        "sync_now": "世界に公開する",
+        "team_desc": "あなたの最高の関数を世界中のユーザーと共有します",
+        "sync_success": "パブリック同期が完了しました！",
+        "sync_error": "同期に失敗しました: ",
+        "enable_translation": "バックグラウンド翻訳を有効にする (ローカルLLM)",
     }
 }
 
@@ -124,6 +143,9 @@ class SoloDashboardApp:
         self.search_history = []
         self.search_history_path = DATA_DIR / "search_history.json"
         self.selected_functions = set()
+        
+        # Sync Engine
+        self.sync_engine = SyncEngine(Database())
         
         # Components
         self.status_text = ft.Text(self.t["stopped"], size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.RED_600)
@@ -162,6 +184,11 @@ class SoloDashboardApp:
                     icon=ft.Icons.SETTINGS_OUTLINED,
                     selected_icon=ft.Icons.SETTINGS,
                     label=self.t["settings"],
+                )
+        self.dest_team = ft.NavigationRailDestination(
+                    icon=ft.Icons.PUBLIC_OUTLINED,
+                    selected_icon=ft.Icons.PUBLIC,
+                    label=self.t.get("team_tab", "Public Store"),
                 )
         
         self.log_list = ft.ListView(expand=True, spacing=2, padding=10, auto_scroll=True)
@@ -214,6 +241,7 @@ class SoloDashboardApp:
             destinations=[
                 self.dest_dashboard,
                 self.dest_functions,
+                self.dest_team,
                 self.dest_settings,
             ],
             on_change=self.handle_rail_change,
@@ -225,7 +253,7 @@ class SoloDashboardApp:
         self.status_header = ft.Text(self.t["mcp_status"], size=12, color=ft.Colors.GREY_500)
         self.logs_title = ft.Text(self.t["activity_logs"], size=16, weight=ft.FontWeight.BOLD)
         self.clear_logs_btn_text = ft.Text(self.t["clear_logs"])
-        self.clear_logs_btn = ft.Button(content=self.clear_logs_btn_text, icon=ft.Icons.DELETE_SWEEP, on_click=lambda _: self.clear_logs())
+        self.clear_logs_btn = ft.OutlinedButton(content=self.clear_logs_btn_text, icon=ft.Icons.DELETE_SWEEP, on_click=lambda _: self.clear_logs())
 
         self.functions_title = ft.Text(self.t["func_explorer"], size=28, weight=ft.FontWeight.BOLD)
         self.functions_desc = ft.Text(self.t["func_desc"], color=ft.Colors.GREY_600)
@@ -239,12 +267,14 @@ class SoloDashboardApp:
         # Content Areas
         self.content_dashboard = self.create_dashboard_view()
         self.content_functions = self.create_functions_view()
+        self.content_team = self.create_team_view()
         self.content_settings = self.create_settings_view()
         
         self.main_content = ft.Container(
             content=ft.Stack([
                 self.content_dashboard,
                 self.content_functions,
+                self.content_team,
                 self.content_settings,
             ]),
             expand=True,
@@ -353,6 +383,71 @@ class SoloDashboardApp:
             )
         ], visible=False, expand=True)
 
+    def create_team_view(self):
+        self.sync_btn = ft.FilledButton(
+            self.t["sync_now"],
+            icon=ft.Icons.SYNC,
+            on_click=self.handle_sync,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.BLUE_600,
+                color=ft.Colors.WHITE
+            )
+        )
+        
+        return ft.Column([
+            self.functions_title,
+            ft.Text(self.t["team_desc"], color=ft.Colors.GREY_600),
+            ft.Divider(height=20, color=ft.Colors.TRANSPARENT),
+            
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.CLOUD_DONE, color=ft.Colors.GREEN_400),
+                    ft.Text("Global Public Store: Active", weight=ft.FontWeight.BOLD),
+                    self.sync_btn
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                padding=20,
+                bgcolor=ft.Colors.WHITE,
+                border_radius=15,
+                border=ft.Border.all(1, ft.Colors.GREY_200),
+            ),
+            
+            ft.Divider(height=20, color=ft.Colors.TRANSPARENT),
+            # In Phase 1, we just provide the Sync button.
+            # Cloud function list visualization will be added in Phase 2.
+            ft.Text("Cloud Asset Library (Shared)", size=16, weight=ft.FontWeight.BOLD),
+            ft.Container(
+                content=ft.Text("Synchronization will merge cloud assets into your local library.", size=12, italic=True),
+                padding=20,
+                expand=True,
+                bgcolor=ft.Colors.GREY_100,
+                border_radius=10
+            )
+        ], visible=False, expand=True)
+
+    def handle_sync(self, e):
+        if not self.sync_engine.is_connected():
+            self.page.snack_bar = ft.SnackBar(ft.Text("Supabase not connected. check settings."), bgcolor=ft.Colors.RED_600)
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+        
+        self.sync_btn.disabled = True
+        self.log("Starting synchronization...", ft.Colors.BLUE_400)
+        self.page.update()
+        
+        try:
+            self.sync_engine.sync_all()
+            self.log(self.t["sync_success"], ft.Colors.GREEN_400)
+            self.page.snack_bar = ft.SnackBar(ft.Text(self.t["sync_success"]), bgcolor=ft.Colors.GREEN_600)
+            self.load_functions() # Refresh list
+        except Exception as ex:
+            self.log(f"{self.t['sync_error']}{ex}", ft.Colors.RED_400)
+            self.page.snack_bar = ft.SnackBar(ft.Text(f"{self.t['sync_error']}{ex}"), bgcolor=ft.Colors.RED_600)
+        
+        self.sync_btn.disabled = False
+        self.page.snack_bar.open = True
+        self.page.update()
+
     def create_settings_view(self):
         # Settings Inputs
         self.model_dropdown = ft.Dropdown(
@@ -382,12 +477,17 @@ class SoloDashboardApp:
             label=self.t["language"],
             value=self.lang,
             options=[
-                ft.dropdown.Option("en", self.t["lang_en"]),
-                ft.dropdown.Option("jp", self.t["lang_jp"]),
+                ft.dropdown.Option("en", "English"),
+                ft.dropdown.Option("jp", "日本語"),
             ],
-            width=400
+            width=400,
         )
         self.lang_dropdown.on_change = self.switch_language
+
+        self.enable_translation_switch = ft.Switch(
+            label=self.t["enable_translation"],
+            value=False
+        )
 
         self.api_key_field = ft.TextField(
             label="Google API Key",
@@ -397,12 +497,25 @@ class SoloDashboardApp:
             hint_text="AIzaSy..."
         )
 
-        self.hf_token_field = ft.TextField(
-            label="HuggingFace Token (for TranslateGemma)",
+
+        self.supabase_url_field = ft.TextField(
+            label=self.t["supabase_url"],
+            width=400,
+            hint_text="https://xxxx.supabase.co"
+        )
+
+        self.supabase_key_field = ft.TextField(
+            label=self.t["supabase_key"],
             password=True,
             can_reveal_password=True,
             width=400,
-            hint_text="hf_..."
+            hint_text="eyJhbG..."
+        )
+        
+        self.team_id_field = ft.TextField(
+            label=self.t["team_id"],
+            width=400,
+            hint_text="uuid-..."
         )
 
         # MCP Configuration for Sharing
@@ -442,8 +555,15 @@ class SoloDashboardApp:
                     self.model_dropdown,
                     self.quality_gate_model_dropdown,
                     self.api_key_field,
-                    self.hf_token_field,
+                    ft.Divider(height=10),
+                    ft.Text("Supabase / Team Sync", size=16, weight=ft.FontWeight.BOLD),
+                    self.supabase_url_field,
+                    self.supabase_key_field,
+                    self.team_id_field,
                     self.restart_hint_text,
+                    ft.Divider(height=10),
+                    ft.Text("Translation Settings", size=16, weight=ft.FontWeight.BOLD),
+                    self.enable_translation_switch,
                     ft.Divider(height=10),
                     ft.Text(self.t["language"], size=16, weight=ft.FontWeight.BOLD),
                     self.lang_dropdown,
@@ -477,7 +597,8 @@ class SoloDashboardApp:
         idx = e.control.selected_index
         self.content_dashboard.visible = (idx == 0)
         self.content_functions.visible = (idx == 1)
-        self.content_settings.visible = (idx == 2)
+        self.content_team.visible = (idx == 2)
+        self.content_settings.visible = (idx == 3)
         
         if idx == 1:
             self.load_functions()
@@ -858,7 +979,7 @@ class SoloDashboardApp:
         self.page.update()
 
     def execute_delete_single(self, name):
-        from solo_mcp.server import delete_function
+        from mcp_core.server import delete_function
         self.close_dialog(self.confirm_dialog)
         self.log(f"Deleting function: {name}", ft.Colors.RED_400)
         delete_function(name)
@@ -866,7 +987,7 @@ class SoloDashboardApp:
         self.load_functions()
 
     def execute_batch_delete(self, e):
-        from solo_mcp.server import delete_function
+        from mcp_core.server import delete_function
         self.close_dialog(self.batch_confirm_dialog)
         count = len(self.selected_functions)
         self.log(f"Batch deleting {count} functions...", ft.Colors.RED_400)
@@ -891,7 +1012,10 @@ class SoloDashboardApp:
                     self.model_dropdown.value = settings.get("FS_MODEL_NAME", "models/gemini-embedding-001")
                     self.quality_gate_model_dropdown.value = settings.get("FS_QUALITY_GATE_MODEL", "gemma-3-27b-it")
                     self.api_key_field.value = settings.get("GOOGLE_API_KEY", "")
-                    self.hf_token_field.value = settings.get("HF_TOKEN", "")
+                    self.supabase_url_field.value = settings.get("SUPABASE_URL", "")
+                    self.supabase_key_field.value = settings.get("SUPABASE_KEY", "")
+                    self.team_id_field.value = settings.get("TEAM_ID", "")
+                    self.enable_translation_switch.value = settings.get("FS_ENABLE_TRANSLATION", False)
                     self.lang = settings.get("UI_LANG", "en")
                     self.lang_dropdown.value = self.lang
                     self.t = LOCALIZATION.get(self.lang, LOCALIZATION["en"])
@@ -907,7 +1031,10 @@ class SoloDashboardApp:
             "FS_MODEL_NAME": self.model_dropdown.value,
             "FS_QUALITY_GATE_MODEL": self.quality_gate_model_dropdown.value,
             "GOOGLE_API_KEY": self.api_key_field.value,
-            "HF_TOKEN": self.hf_token_field.value,
+            "SUPABASE_URL": self.supabase_url_field.value,
+            "SUPABASE_KEY": self.supabase_key_field.value,
+            "TEAM_ID": self.team_id_field.value,
+            "FS_ENABLE_TRANSLATION": self.enable_translation_switch.value,
             "UI_LANG": self.lang_dropdown.value
         }
         try:

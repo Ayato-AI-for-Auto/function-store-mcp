@@ -1,8 +1,8 @@
 import logging
 import duckdb
 import json
-from solo_mcp import config
-from solo_mcp.embedding import embedding_service
+from mcp_core import config
+from mcp_core.embedding import embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ def get_db_connection():
     """Returns a new DuckDB connection."""
     try:
         # We must re-import or look up dynamically to catch the monkeypatch
-        import solo_mcp.config as cfg
+        import mcp_core.config as cfg
         db_path = str(cfg.DB_PATH)
         # Use a fresh connection every time, explicitly pointing to the path
         conn = duckdb.connect(db_path)
@@ -178,3 +178,46 @@ def _check_model_version():
         logger.error(f"Error checking model version: {e}")
     finally:
         conn.close()
+
+
+class Database:
+    """Wrapper class for database operations to be used by SyncEngine."""
+    def upsert_function_from_cloud(self, cloud_func: dict):
+        """Updates or inserts a function pulled from Supabase into the local DuckDB."""
+        conn = get_db_connection()
+        try:
+            # Check if exists
+            existing = conn.execute("SELECT id, updated_at FROM functions WHERE name = ?", (cloud_func["name"],)).fetchone()
+            
+            if existing:
+                # Simple LWW or version check could go here
+                # For now, just update
+                conn.execute("""
+                    UPDATE functions SET 
+                        code = ?, description = ?, metadata = ?, tags = ?, updated_at = ?, sync_status = 'synced'
+                    WHERE name = ?
+                """, (
+                    cloud_func["code"], 
+                    cloud_func["description"], 
+                    json.dumps(cloud_func.get("metadata", {})),
+                    json.dumps(cloud_func.get("tags", [])),
+                    cloud_func["updated_at"],
+                    cloud_func["name"]
+                ))
+            else:
+                conn.execute("""
+                    INSERT INTO functions (name, code, description, metadata, tags, updated_at, sync_status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'synced')
+                """, (
+                    cloud_func["name"],
+                    cloud_func["code"],
+                    cloud_func["description"],
+                    json.dumps(cloud_func.get("metadata", {})),
+                    json.dumps(cloud_func.get("tags", [])),
+                    cloud_func["updated_at"]
+                ))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error upserting function from cloud: {e}")
+        finally:
+            conn.close()

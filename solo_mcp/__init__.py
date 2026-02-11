@@ -1,1 +1,0 @@
-# solo_mcp package

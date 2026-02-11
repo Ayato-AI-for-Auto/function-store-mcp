@@ -3,8 +3,8 @@ Test API authentication using FastAPI TestClient to ensure isolation.
 """
 import pytest
 from fastapi.testclient import TestClient
-from solo_mcp.api import app
-from solo_mcp.auth import generate_api_key
+from mcp_core.api import app
+from mcp_core.auth import generate_api_key
 
 client = TestClient(app)
 

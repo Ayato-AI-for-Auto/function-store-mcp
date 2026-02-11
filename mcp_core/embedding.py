@@ -3,7 +3,7 @@ import numpy as np
 import hashlib
 from google import genai
 from google.genai import types
-from solo_mcp.config import MODEL_NAME, GOOGLE_API_KEY
+from mcp_core.config import MODEL_NAME, GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
 

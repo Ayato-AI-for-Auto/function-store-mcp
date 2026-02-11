@@ -6,11 +6,12 @@ import atexit
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Optional
-from solo_mcp.config import DATA_DIR
-from solo_mcp.database import get_db_connection
-from solo_mcp.runtime import _run_test_cases
-from solo_mcp.environment import env_manager
-from solo_mcp.runtime_docker import docker_runtime
+from mcp_core import config
+from mcp_core.config import DATA_DIR
+from mcp_core.database import get_db_connection, Database
+from mcp_core.runtime import _run_test_cases
+from mcp_core.environment import env_manager
+from mcp_core.sync_engine import SyncEngine
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,10 @@ class BackgroundVerifier:
 class SyncAgent:
     """Background service that synchronizes local functions with the Cloud Store."""
     def __init__(self, interval: Optional[int] = None):
-        self.interval = interval or 60
+        self.interval = interval or 300 # Poll every 5 minutes by default
         self.stop_event = threading.Event()
         self.thread = None
-        self.cloud_endpoint = os.environ.get("FS_CLOUD_ENDPOINT", "http://mock-cloud-api/v1/sync")
+        self.sync_engine = SyncEngine(Database())
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -97,14 +98,39 @@ class SyncAgent:
             self.stop_event.wait(self.interval)
 
     def _sync_pending(self):
-        """Mock implementation: simply marks 'pending' status as 'synced'."""
+        """Pulls from cloud and pushes local changes."""
+        if not self.sync_engine.is_connected():
+            return
+            
+        logger.info("SyncAgent: Starting sync check...")
+        
+        # 1. Pull from cloud to local
+        cloud_funcs = self.sync_engine.pull_functions()
+        db = Database()
+        for cf in cloud_funcs:
+            db.upsert_function_from_cloud(cf)
+            
+        # 2. Push local functions to cloud (active ones that are not already synced)
         conn = get_db_connection()
         try:
-            pending = conn.execute("SELECT name FROM functions WHERE sync_status = 'pending'").fetchall()
-            for (name,) in pending:
-                logger.info(f"SyncAgent: Mock syncing '{name}' to cloud...")
-                conn.execute("UPDATE functions SET sync_status = 'synced', updated_at = ? WHERE name = ?", (time.ctime(), name))
-            conn.commit()
+            # We iterate through all 'active' functions. 
+            # In a more advanced version, we'd use a 'last_synced_at' marker.
+            local_funcs = conn.execute("SELECT name, code, description, tags, metadata, version FROM functions WHERE sync_status = 'pending'").fetchall()
+            for name, code, desc, tags_json, meta_json, ver in local_funcs:
+                if self.stop_event.is_set():
+                    break
+                tags = json.loads(tags_json) if tags_json else []
+                meta = json.loads(meta_json) if meta_json else {}
+                
+                # Push will upsert on Supabase side based on (team_id, name)
+                self.sync_engine.push_function({
+                    "name": name,
+                    "code": code,
+                    "description": desc,
+                    "tags": tags,
+                    "metadata": meta,
+                    "version": ver
+                })
         finally:
             conn.close()
 
@@ -171,6 +197,8 @@ class TranslationWorker:
             if self.stop_event.wait(self.interval):
                 break
             try:
+                if not config.FS_ENABLE_TRANSLATION:
+                    continue
                 self._process_pending_translations()
             except Exception as e:
                 logger.error(f"TranslationWorker Poll Error: {e}")
@@ -188,7 +216,7 @@ class TranslationWorker:
         if not pending:
             return
 
-        from solo_mcp.translation import translation_service
+        from mcp_core.translation import translation_service
         for name, desc, desc_en, desc_jp in pending:
             if self.stop_event.is_set():
                 break
@@ -204,7 +232,7 @@ translation_worker = TranslationWorker()
 sync_agent = SyncAgent()
 dashboard_exporter = DashboardExporter()
 
-atexit.register(docker_runtime.cleanup)
+# atexit.register(docker_runtime.cleanup)
 atexit.register(sync_agent.stop)
 atexit.register(dashboard_exporter.stop)
 atexit.register(translation_worker.stop)

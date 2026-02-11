@@ -26,12 +26,12 @@ jobs:
           # uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Lint with ruff
-        run: uv run ruff check solo_mcp frontend tests
+        run: uv run ruff check mcp_core frontend tests
 
       - name: Type check with mypy
         run: |
           # Install type stubs if necessary, or skip if too heavy
-          uv run mypy solo_mcp --ignore-missing-imports
+          uv run mypy mcp_core --ignore-missing-imports
 
       - name: Run tests with pytest
         run: |

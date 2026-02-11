@@ -1,143 +1,56 @@
-# Solo-MCP - UI Design Document (Ver 1.1)
+# Solo-MCP UI Design (Flet Dashboard)
 
-## 1. 概要
+## Design Philosophy (Horiemon Style)
+**「Speed & Simplicity」**
+ユーザーが迷う時間を1秒でも減らす。
+直感的に「自分の資産」と「世界の資産」を行き来できるインターフェース。
 
-Flet (Flutter for Python) を使用した個人開発者向けダッシュボード。
-`solo_mcp` サーバーの起動・停止、登録済み関数の閲覧、設定変更を提供する。
+## 1. Application Structure
+Flet (Flutter for Python) を採用し、シングルバイナリ感覚で起動するデスクトップアプリライクなWeb UI。
 
----
+### Navigation (Sidebar)
+左側のナビゲーションレールで以下の主要機能にアクセス。
 
-## 2. 画面構成
+1.  **⚡ Dashboard (Server Control)**
+    - MCPサーバーのステータス確認。
+    - ログの閲覧と消去。
+    - サーバーの再起動（設定変更後など）。
 
-```
-+-------------------+--------------------------------------+
-|  NavigationRail   |          Main Content Area           |
-|                   |                                      |
-|  [Dashboard]      |  (Dashboard / Functions / Settings)  |
-|  [Functions]      |                                      |
-|  [Settings]       |                                      |
-+-------------------+--------------------------------------+
-```
+2.  **📂 Functions (Explore)**
+    - ローカルに保存された関数のリスト表示。
+    - **Search Bar:** リアルタイムフィルタリング。
+    - **Function Card:**
+        - 関数名、説明文（日英）、タグ。
+        - **Copy Code:** ワンクリックでクリップボードへ。
+        - **Delete:** 不要な関数の削除。
 
-| タブ | 説明 |
-|:---|:---|
-| **Dashboard** | サーバー制御とアクティビティログ表示 |
-| **Functions** | 登録済み関数の一覧表示 |
-| **Settings** | モデル選択、APIキー設定、言語切り替え |
+3.  **🌍 Public Store (Global Sync)**
+    - **Sync Button:** 「Sync to Global」でローカルの関数を公開。
+    - **Status Indicator:** 現在の公開状態を表示。
+    - (Future): 世界中の関数を検索・インポートするインターフェース。
 
----
+4.  **⚙️ Settings**
+    - **Google API Key:** Gemini APIキーの設定。
+    - **Model Selection:** Embeddingモデル、Quality Gateモデルの選択。
+    - **Language:** 日本語 / English 切り替え。
+    - **Supabase Overrides:** 上級者向け接続設定。
 
-## 3. コンポーネント階層
+## 2. Visual Style
+- **Framework:** Flet (Material Design 3 base).
+- **Color Palette:**
+    - Primary: `Blue 600` (信頼、知性)
+    - Accents: `Green 400` (成功、Sync完了), `Red 400` (エラー、削除)
+    - Background: `Grey 50` (清潔感、モダン)
+- **Typography:**
+    - Headings: Bold, Sans-serif.
+    - Code: Monospace (Consolas/JetBrains Mono).
 
-```
-FunctionStoreApp (ft.Page)
-├── NavigationRail
-│   ├── dest_dashboard (Dashboard)
-│   ├── dest_functions (Functions)
-│   └── dest_settings (Settings)
-│
-└── main_content (ft.Container)
-    └── ft.Stack
-        ├── content_dashboard (ft.Column, visible=True/False)
-        │   ├── dashboard_title
-        │   ├── Status Card (status_icon, status_text, start_stop_btn)
-        │   ├── logs_title
-        │   └── log_list (ft.ListView)
-        │
-        ├── content_functions (ft.Column, visible=True/False)
-        │   ├── functions_title
-        │   ├── Refresh Button
-        │   └── func_list_view (ft.ListView)
-        │       └── ft.ListTile (per function)
-        │
-        └── content_settings (ft.Column, visible=True/False)
-            ├── settings_title
-            ├── model_dropdown (Embedding Model)
-            ├── quality_gate_model_dropdown (Reviewer Model)
-            ├── api_key_field (Google API Key)
-            ├── lang_dropdown (Language)
-            └── save_btn
-```
+## 3. Key Interactions
+- **Instant Search:** 入力と同時にリストが絞り込まれる。
+- **SnackBar Notifications:** アクションの結果（保存、同期、エラー）を画面下部に控えめに通知。
+- **Dialogs:** 削除などの破壊的操作には確認ダイアログを表示。
 
----
-
-## 4. 状態管理 (State)
-
-| 変数名 | 型 | 説明 | 更新タイミング |
-|:---|:---|:---|:---|
-| `lang` | `str` | 現在の言語コード (`en` / `jp`) | 言語ドロップダウン変更時 |
-| `t` | `dict` | 現在のローカライズ辞書 | `lang` 変更時に連動 |
-| `process` | `subprocess.Popen` | サーバープロセスオブジェクト | 起動/停止時 |
-| `is_running` | `bool` | サーバー稼働状態 | 起動/停止/異常終了時 |
-
----
-
-## 5. 主要メソッド
-
-| メソッド | 役割 |
-|:---|:---|
-| `build_ui()` | 全UIコンポーネントを構築 |
-| `handle_rail_change(e)` | タブ切り替え処理。`visible` を制御 |
-| `toggle_server(e)` | サーバー起動/停止のトグル |
-| `start_server()` | `subprocess.Popen` でサーバー起動 |
-| `stop_server()` | `process.terminate()` でサーバー停止 |
-| `read_stream(stream)` | stderr/stdout をログに表示 (スレッド) |
-| `load_functions()` | `dashboard.parquet` から関数一覧を取得 |
-| `load_settings()` | `.env` から設定を読み込み |
-| `save_settings(e)` | `.env` に設定を書き込み |
-| `switch_language(e)` | UI全体のローカライゼーション更新 |
-
----
-
-## 6. ローカライゼーション
-
-`LOCALIZATION` 辞書で `en` (英語) と `jp` (日本語) をサポート。
-
-**主要キー:**
-- `title`, `dashboard`, `functions`, `settings`
-- `server_control`, `start_server`, `stop_server`
-- `running`, `stopped`
-- `model_config`, `embedding_model`, `quality_gate_model`
-- `save_settings`, `settings_saved`, `settings_fail`
-
----
-
-## 7. データフロー
-
-### 7.1 関数一覧の読み込み
-```
-[DashboardExporter (server.py)]
-    │
-    │ (2秒ごとにParquet出力)
-    ▼
-[data/dashboard.parquet]
-    │
-    │ (duckdb.query)
-    ▼
-[load_functions()]
-    │
-    ▼
-[func_list_view (ListView)]
-```
-
-### 7.2 設定の保存
-```
-[Settings Tab]
-    │
-    │ (save_settings)
-    ▼
-[.env ファイル]
-    │
-    │ (サーバー再起動で反映)
-    ▼
-[server.py config.py]
-```
-
----
-
-## 8. 今後の拡張ポイント
-
-- [ ] 関数の削除機能
-- [ ] 関数詳細ダイアログ (コード表示、バージョン履歴)
-- [ ] MCP設定JSONのエクスポート機能
-- [ ] ダークモード対応
+## 4. Future Roadmap (UI)
+- [ ] **Dark Mode:** エンジニア向けの目に優しいテーマ。
+- [ ] **Drag & Drop Import:** Pythonファイルを画面に落として登録。
+- [ ] **Visual Graph:** 関数間の依存関係を可視化。

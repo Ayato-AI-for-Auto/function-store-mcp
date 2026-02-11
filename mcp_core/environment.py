@@ -7,7 +7,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import List, Tuple
-from solo_mcp.config import ENVS_DIR
+from mcp_core.config import ENVS_DIR
 
 logger = logging.getLogger(__name__)
 

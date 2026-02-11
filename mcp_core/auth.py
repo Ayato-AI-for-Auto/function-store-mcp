@@ -8,7 +8,7 @@ import time
 from typing import Optional, Tuple
 import duckdb
 
-from solo_mcp.config import API_KEYS_DB_PATH as API_KEYS_DB
+from mcp_core.config import API_KEYS_DB_PATH as API_KEYS_DB
 
 def init_api_keys_db():
     """Initialize API keys database."""

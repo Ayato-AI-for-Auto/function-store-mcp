@@ -5,13 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from solo_mcp.logic import (
+from mcp_core.logic import (
     do_save_impl as _do_save_impl,
     do_search_impl as _do_search_impl,
     do_get_impl as _do_get_impl,
     do_get_history_impl as _do_get_history_impl,
 )
-from solo_mcp.auth import (
+from mcp_core.auth import (
     verify_api_key,
 )
 
@@ -32,7 +32,11 @@ app.add_middleware(
 
 # Authentication dependency
 async def get_current_user(x_api_key: Optional[str] = Header(None)):
-    """Verify API key from header."""
+    """
+    Verify API key from header.
+    TODO (Horiemon Reform): For Public Web UI, we might need a read-only public key or bypass.
+    Current logic enforces strict auth, which is good for the "Private Vault" phase.
+    """
     if not x_api_key:
         raise HTTPException(status_code=401, detail="API key required")
     

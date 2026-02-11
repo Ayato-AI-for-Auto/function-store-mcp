@@ -7,7 +7,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.append(str(BASE_DIR))
 
-from solo_mcp.quality_gate import QualityGate  # noqa: E402
+from mcp_core.quality_gate import QualityGate  # noqa: E402
 
 # Set up basic logging to see the heal attempts
 logging.basicConfig(level=logging.INFO)

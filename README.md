@@ -1,4 +1,4 @@
-# Solo-MCP
+# Function Store MCP (Core Edition)
 
 AIエージェント（Cursor, Claude, Gemini CLI 等）のための、個人開発特化型 **関数資産管理システム**。
 
@@ -15,10 +15,19 @@ AIエージェント（Cursor, Claude, Gemini CLI 等）のための、個人開
 | **Quality Gate** | Ruff（Linter）+ Mypy（型チェック）+ AIコードレビューで登録前に品質を担保 |
 | **Data Sanitizer** | 絵文字・全角スペースなど、ターミナル互換性を阻害する文字を自動除去 |
 | **REST API** | FastAPI ベースの REST エンドポイント。APIキー認証によるセキュアなアクセス |
-| **多言語説明生成** | TranslateGemma（ローカルLLM）による日英自動翻訳 |
+| **多言語説明生成** | Google GenAI (Gemma 3) による日英自動翻訳 |
 | **バックグラウンド検証** | 登録後に自動でテストケースを実行し、ステータスを更新 |
 | **バージョン管理** | 関数の更新履歴を自動保存。過去のバージョンにロールバック可能 |
-| **Docker実行環境** | テストケースを隔離されたDockerコンテナ内で安全に実行 |
+| **ローカル実行環境** | `venv` + `subprocess` を使用した軽量・高速なテスト実行 |
+
+## 🌍 公開ストア革命に参加せよ (Join the Revolution)
+
+コードは自由であるべきだ。あなたの関数を世界に解放しよう。
+
+1.  **起動:** `FunctionStore.bat` でダッシュボードを開く。
+2.  **作成:** 便利な関数を作ってローカルに保存する。
+3.  **同期:** ダッシュボードの **"Sync to Global"** ボタンを押す。
+4.  **共有:** たったこれだけで、あなたのコードは世界中のエージェントから利用可能になる。
 
 ## クイックスタート
 
@@ -56,10 +65,10 @@ AIエージェント（Cursor, Claude, Gemini CLI 等）のための、個人開
 
 ```bash
 # Stdioモード（Claude Desktop / Gemini CLI 等のMCPクライアント向け）
-uv run python -m solo_mcp.server
+uv run python -m mcp_core.server
 
 # SSEモード（HTTP APIサーバーとして利用）
-uv run python -m solo_mcp.server --transport sse --port 8001
+uv run python -m mcp_core.server --transport sse --port 8001
 ```
 
 ### 4. REST API サーバー起動
@@ -69,7 +78,7 @@ uv run python -m solo_mcp.server --transport sse --port 8001
 uv run python scripts/manage_keys.py generate --name "my-app"
 
 # REST APIサーバー起動
-uv run uvicorn solo_mcp.api:app --host 0.0.0.0 --port 8000
+uv run uvicorn mcp_core.api:app --host 0.0.0.0 --port 8000
 ```
 
 ### 5. MCP クライアントへの登録
@@ -81,8 +90,8 @@ uv run uvicorn solo_mcp.api:app --host 0.0.0.0 --port 8000
   "mcpServers": {
     "function-store": {
       "command": "uv",
-      "args": ["run", "python", "-m", "solo_mcp.server"],
-      "cwd": "/path/to/solo-mcp"
+      "args": ["run", "python", "-m", "mcp_core.server"],
+      "cwd": "/path/to/function-store-mcp"
     }
   }
 }
@@ -106,8 +115,8 @@ uv run uvicorn solo_mcp.api:app --host 0.0.0.0 --port 8000
 ## アーキテクチャ
 
 ```
-solo-mcp/
-  solo_mcp/           # コアロジック
+mcp-core/
+  mcp_core/           # コアロジック
     server.py         #   MCPサーバー (FastMCP)
     api.py            #   REST API (FastAPI)
     auth.py           #   APIキー認証
@@ -124,7 +133,7 @@ solo-mcp/
   scripts/            # ユーティリティスクリプト
     manage_keys.py    #   APIキー管理CLI
     translator.py     #   翻訳バッチ処理
-  devops/             # CI/CD ツール
+  cicd/               # CI/CD ツール
     local_ci.ps1      #   ローカルCI + Auto-Push
   .github/workflows/  # GitHub Actions
     ci.yml            #   CI (Lint / Type Check / Test)
@@ -142,7 +151,7 @@ solo-mcp/
 
 ```powershell
 # Lint + Type Check + Test を一括実行（全パスで自動 git push）
-.\devops\local_ci.ps1
+.\cicd\local_ci.ps1
 ```
 
 ### テスト
@@ -159,10 +168,10 @@ uv run python -m pytest tests/test_integration.py -vv
 
 ```bash
 # Linter
-uv run ruff check solo_mcp/
+uv run ruff check mcp_core/
 
 # Type Check
-uv run mypy solo_mcp/
+uv run mypy mcp_core/
 ```
 
 ## REST API リファレンス

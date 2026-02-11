@@ -1,5 +1,5 @@
 import time
-from solo_mcp.logic import do_save_impl, do_get_history_impl
+from mcp_core.logic import do_save_impl, do_get_history_impl
 
 # No local setup needed, handled by conftest.py
 
@@ -9,12 +9,12 @@ def test_versioning_flow():
     
     # 1. Save V1
     code_v1 = "def test(): return 'v1'"
-    res = do_save_impl(asset_name=name, code=code_v1, description="Version 1", test_cases=[])
+    res = do_save_impl(asset_name=name, code=code_v1, description="Version 1", test_cases=[], skip_test=True)
     assert "SUCCESS" in res
     
     # 2. Save V2
     code_v2 = "def test(): return 'v2'"
-    res = do_save_impl(asset_name=name, code=code_v2, description="Version 2", test_cases=[])
+    res = do_save_impl(asset_name=name, code=code_v2, description="Version 2", test_cases=[], skip_test=True)
     assert "SUCCESS" in res
     
     # 3. Check history

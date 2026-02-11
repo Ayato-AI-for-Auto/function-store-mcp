@@ -1,164 +1,80 @@
-# Solo-MCP Monetization Roadmap
+# Solo-MCP Monetization Roadmap (Horiemon Style)
 
 ## コンセプト
-システム開発におけるAIエージェントによる車輪の再開発の防止
+システム開発におけるAIエージェントによる車輪の再発明の防止。
+「世界中の関数を、あなたの武器に。」
 
 ## Executive Summary
 
-Solo-MCPは「個人開発者向けの無料コア(OS)」と「チーム/企業向けの有料クラウドサービス(App)」の2層構造でマネタイズする。
+Solo-MCPは **「Public-First (まずは公開)」** 戦略を採用し、圧倒的なユーザー数とコンテンツ（関数）を確保した後に、プライバシーとセキュリティで課金するモデルへ移行する。
 
-追加として、課金アイテムみたいな感じで、関数の買いきりの提供を行う。
-
----
-
-## Phase 0: MVP Launch (現在)
-
-**目標**: GitHub公開 + X宣伝 + 初期ユーザー獲得
-
-### 完了済み機能
-- [x] ローカルMCPサーバー (Stdio/SSE)
-- [x] セマンティック検索 (Gemini Embedding API)
-- [x] Quality Gate (Ruff + Mypy + AI Review)
-- [x] Auto-Heal (説明文自動修復)
-- [x] Data Sanitizer (絵文字・全角削除)
-- [x] ワンクリック起動 (FunctionStore.bat)
-- [x] UIダッシュボード (Flet)
-
-### 収益: $0
+1.  **Public (Free)**: 「Public Dump」。誰もが無料で関数を公開・利用可能。Supabaseの公開テーブルを使用。
+2.  **Private (Paid)**: 「Private Vault」。自分だけの、あるいはチームだけの秘密の関数ストレージ。
+3.  **Enterprise (High-Ticket)**: 「Enterprise Gate」。企業の安心・安全（監査、品質保証）をお金に変える。
 
 ---
 
-## Open Core Strategy (公開範囲の定義)
+## Phase 1: The "Public Dump" MVP (Current Status)
 
-Solo-MCPは「Open Core」モデルを採用し、以下のようにリポジトリを分離・管理する。これにより、コミュニティの力を借りつつ、ビジネスモデルを保護する。
+**目的:** ユーザー獲得とコンテンツの集積（トラフィック重視）。
+**マネタイズ:** なし（完全無料）。
 
-| ディレクトリ/ファイル | 公開設定 | 理由 |
-|:---|:---|:---|
-| `solo_mcp/` (Core Logic) | **Public (OSS)** | コミュニティによる機能改善と信頼性の獲得 |
-| `frontend/` (Dashboard) | **Public (OSS)** | UIのカスタマイズ性を開放し、ファンを増やす |
-| `data/` (User Data) | **Private (.gitignore)** | ユーザーの関数資産・APIキー・設定は絶対に公開しない |
-| `devops/` (CI/CD) | **Public (OSS)** | "DevOps Pack"としての価値をアピールするため公開 |
-| `pdk/` (Plugin Dev Kit) | **Public (OSS)** | サードパーティ開発者がプラグインを作るためのキット |
-| `pro_plugins/` (予定) | **Private (Proprietary)** | 有料版機能（Supabase Sync等）はここに隔離し、公開リポジトリには含めない |
+### 提供価値
+- **Global Sync:** ワンクリックで自作関数を世界中に公開。
+- **Unlimited Access:** 世界中のエンジニアが作った関数を無料で使い放題。
+- **Zero Friction:** Dockerレス、設定不要、0.1秒で即保存。
 
----
-
-## Phase 1: Community Growth (1-2ヶ月目)
-
-**目標**: GitHub Star 100+、Xフォロワー500+、Blueskyのフォロワー100人
-
-### タスク
-- [ ] READMEの英語版作成
-- [ ] デモ動画 (YouTube/X)
-- [ ] r/LocalLLaMA, Hacker News, Dev.to への投稿
-- [ ] Issue対応・コミュニティサポート
-
-### 収益: $0 (投資フェーズ)
+### インフラコスト
+- **Compute:** ユーザーのPC（ローカル）にオフロード。サーバーコストほぼゼロ。
+- **Storage:** Supabase (Free Tier) を活用。
 
 ---
 
-## Phase 2: Pro Version Launch (2-3ヶ月目)
+## Phase 2: The "Private Vault" (Next Step)
 
-**目標**: 初月 $500 MRR (月額課金)
+**目的:** 「秘密にしたい」という欲求への課金（月額サブスクリプション）。
+**ターゲット:** フリーランス、小規模チーム、スタートアップ。
 
-### Free版 (BYOK: Bring Your Own Key)
-| 機能 | 制限 |
-|---|---|
-| ローカルMCPサーバー | 無制限 |
-| セマンティック検索 | 無制限 |
-| Quality Gate | 無制限 |
-| ローカル翻訳 (TranslateGemma) | HF_TOKEN必須、ユーザーGPU使用 |
-| Supabase Sync | なし |
+### Pro機能 ($5 - $10 / month)
+- **Private Storage:** 公開せずに自分専用のクラウドストレージに関数を保存。
+- **Team Sync:** 招待したメンバー間でのみ関数を共有。
+- **Version History (Unlimited):** 無制限のバージョン管理とロールバック。
 
-### Pro版 ($9.99/月)
-| 機能 | 内容 |
-|---|---|
-| **Supabase Sync** | チームで関数ライブラリを共有 |
-| **Managed API Keys** | Google API Key を提供 (BYOKの煩わしさ解消) |
-| **Managed Translation** | Cloud Run上のTranslateGemmaエンドポイント |
-| **優先サポート** | Discord/Slackチャンネル |
-
-### 技術要件
-- [ ] Supabase Auth + Row Level Security (RLS) 設定
-- [ ] Cloud Run Proxy API (Managed Key用)
-- [ ] Stripe連携 (サブスク課金)
-- [ ] ダッシュボードに「Upgrade to Pro」ボタン
+### 実装予定機能
+- [ ] Supabase RLS (Row Level Security) によるアクセス制御。
+- [ ] Stripe 決済の統合。
+- [ ] プライベートリポジトリへの招待機能。
 
 ---
 
-## Phase 3: Function Packs (4-6ヶ月目)
+## Phase 3: The "Enterprise Gate" (Future)
 
-**目標**: MRR $2,000+
+**目的:** 企業の「コンプライアンス」と「品質保証」への課金。
+**ターゲット:** 中堅・大企業。
 
-### Preset Function Packs (追加収益源)
+### Enterprise機能 (Custom Pricing)
+- **Cloud Quality Gate:** クラウド上での厳密な静的解析・脆弱性診断。
+- **Audit Logs:** 「誰が」「いつ」「どの関数を」使ったかの完全なログ。
+- **SLA:** 稼働率保証。
+- **On-Premise / VPC:** 顧客環境へのデプロイオプション。
 
-| パック名 | 内容 | 価格 |
-|---|---|---|
-| **Data Science Pack** | Pandas/NumPy/Scikit-learn関連の厳選関数20個 | $4.99 (買い切り) |
-| **Web Scraping Pack** | BeautifulSoup/Selenium/Playwright関数15個 | $4.99 |
-| **API Integration Pack** | OpenAI/Stripe/Twilio等の連携関数15個 | $4.99 |
-| **Automation Pack** | ファイル操作/スケジューリング関数15個 | $4.99 |
-
-### 配布方法
-1. **GitHub Releases**: `packs/data-science-pack.json` を公開
-2. **ダッシュボード統合**: 「Import Pack from URL」ボタン
-3. **Pro版限定**: ワンクリック同期 (Supabase経由)
+### マネタイズ設定
+- APIコール課金、または年間ライセンス契約。
 
 ---
 
-## Phase 4: Enterprise (6-12ヶ月目)
+## Revenue Projection (予測)
 
-**目標**: MRR $10,000+
-
-### Enterprise版 ($99/月〜)
-| 機能 | 内容 |
-|---|---|
-| **Self-hosted Option** | オンプレミスDeployment |
-| **SSO (SAML/OIDC)** | 企業認証連携 |
-| **Audit Log** | 操作履歴の完全記録 |
-| **Priority SLA** | 99.9% Uptime保証 |
-| **Custom Packs** | 企業専用関数ライブラリ構築支援 |
-
----
-
-## Revenue Projection
-
-| Phase | 期間 | 予想MRR | 累計ユーザー |
+| Phase | 期間 | 目標MRR | ユーザー数 |
 |---|---|---|---|
-| Phase 0 | 現在 | $0 | 0 |
-| Phase 1 | 1-2ヶ月目 | $0 | 100 |
-| Phase 2 | 2-3ヶ月目 | $500 | 500 |
-| Phase 3 | 4-6ヶ月目 | $2,000 | 1,500 |
-| Phase 4 | 6-12ヶ月目 | $10,000+ | 5,000+ |
+| **Phase 1 (Public)** | Now - 3ヶ月 | $0 | 1,000+ |
+| **Phase 2 (Private)** | 3 - 6ヶ月 | $1,000 | 3,000+ |
+| **Phase 3 (Ent)** | 6 - 12ヶ月 | $10,000+ | 10,000+ |
 
 ---
 
-## Key Success Metrics
+## Competitive Moat (競合優位性)
 
-| 指標 | Phase 1 | Phase 2 | Phase 3 |
-|---|---|---|---|
-| GitHub Stars | 100 | 500 | 1,000 |
-| Monthly Active Users | 50 | 200 | 500 |
-| Paid Subscribers | 0 | 50 | 200 |
-| MRR | $0 | $500 | $2,000 |
-| Churn Rate | - | < 10% | < 5% |
-
----
-
-## Competitive Moat (参入障壁)
-
-| 障壁 | 戦略 |
-|---|---|
-| **データロックイン** | 関数ライブラリが貯まるほど移行コスト増加 |
-| **UX差別化** | Auto-Heal, Sanitizerは競合が真似しにくい |
-| **コミュニティ** | Preset Packs、ユーザー投稿関数でエコシステム構築 |
-| **ブランド** | 「Solo開発者のための」明確なポジショニング |
-
----
-
-## Next Actions
-
-1. **今すぐ**: GitHub公開 + X宣伝
-2. **今週中**: server.py分割リファクタリング
-3. **来週**: 統合テスト作成
-4. **2週間後**: Supabase Sync設計開始
+1.  **Speed:** Dockerを廃止し、他社製品より圧倒的に速い（0.1秒保存）。
+2.  **Network Effect:** 「Public Store」に関数が集まるほど、後発エージェントはここを使わざるを得なくなる。
+3.  **Simplicity:** `uv` ひとつで動く、究極の手軽さ。

@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.append(str(BASE_DIR))
 
-from solo_mcp.sanitizer import DataSanitizer  # noqa: E402
+from mcp_core.sanitizer import DataSanitizer  # noqa: E402
 
 def test_sanitizer():
     print("=== Data Sanitizer Unit Test ===")

@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Tuple, List, Dict
 from google import genai
-from solo_mcp.config import GOOGLE_API_KEY, QUALITY_GATE_MODEL
+from mcp_core.config import GOOGLE_API_KEY, QUALITY_GATE_MODEL
 
 logger = logging.getLogger(__name__)
 

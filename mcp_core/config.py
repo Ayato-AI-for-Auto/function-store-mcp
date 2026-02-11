@@ -38,6 +38,7 @@ TRANSPORT = get_setting("FS_TRANSPORT", "stdio")
 
 # Embedding Config
 MODEL_NAME = get_setting("FS_MODEL_NAME", "models/gemini-embedding-001")
+# Google API Key for Gemini/Gemma
 GOOGLE_API_KEY = get_setting("GOOGLE_API_KEY")
 
 # Quality Gate Config
@@ -47,5 +48,10 @@ QUALITY_GATE_MODEL = get_setting("FS_QUALITY_GATE_MODEL", "gemma-3-27b-it")
 # Options: "process" (default, local venv), "docker" (containerized)
 EXECUTION_MODE = get_setting("FS_EXECUTION_MODE", "auto")
 
-# HuggingFace Token (for TranslateGemma)
-HF_TOKEN = get_setting("HF_TOKEN")
+FS_ENABLE_TRANSLATION = get_setting("FS_ENABLE_TRANSLATION", "False").lower() == "true"
+
+# Supabase Config (Public/Private Sync)
+# UI Settings take precedence over Env Vars
+SUPABASE_URL = get_setting("SUPABASE_URL")
+SUPABASE_KEY = get_setting("SUPABASE_KEY")  # Supports Anon Key (Public) or Service Role (Private)
+TEAM_ID = get_setting("TEAM_ID")

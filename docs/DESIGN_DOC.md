@@ -1,98 +1,72 @@
-# Solo-MCP - System Design Document (Ver 2.5)
+# Function Store MCP - System Design Document (Ver 4.0)
 
 ## 1. プロダクトコンセプト (Concept)
 
-### 1.1 目的：車輪の再開発の完全撤廃
-AIエージェントによるプログラミングにおける「同じようなロジックを何度もゼロから書き直す」無駄を、個人開発資産（Solo Assets）として管理することで解消する。
+### 1.1 目的：チーム開発における「車輪の再開発」の撤廃
+AIエージェントによるプログラミングにおける「同じようなロジックを何度もゼロから書き直す」無駄を、**チーム資産（Team Assets）** として共有管理することで解消する。
 
-### 1.2 コアバリュー：Solo Developerのための「外部海馬」
-コードを単なるテキストではなく、**「Solo-MCP」** が保証する「動作検証済みのスキル（Ability）」として永続化する。
-AIエージェントにとっての **「信頼できる長期記憶領域（External Hippocampus）」** および **「標準作業手順書（SOP Library）」** を提供する。
+### 1.2 コアバリュー：Team Developerのための「集合知」
+コードを単なるテキストではなく、**「Solo-MCP」** が保証する「動作検証済みのスキル（Ability）」として永続化し、チーム全体で共有する。
+AIエージェントにとっての **「信頼できる共有長期記憶（Shared Hippocampus）」** を提供する。
 
 ---
 
 ## 2. システムアーキテクチャ (Architecture)
 
-**Local-First / Standalone Architecture**
-外部クラウドに依存せず、ユーザーのPC内で完結する構成。
+**Public-First / Local-Compute Architecture**
+「重い処理はローカル（ユーザーのエッジ）」、「データはクラウド（Supabase）」に特化した構成。
 
 ```mermaid
 graph TD
     User[User / AI Agent]
     
     subgraph "Frontend Layer"
-        Dashboard[SoloDashboardApp]
-        Config[Settings Tab]
+        CLI[MCP Server (CLI)]
+        Dashboard[Web Dashboard]
     end
     
-    subgraph "Solo-Logic Layer (solo_mcp/)"
+    subgraph "Core-Logic Layer (mcp_core/)"
         Manager[Function Manager]
-        Gatekeeper[Quality Gate]
-        Search[Vector Search]
+        Sync[Sync Engine]
+        Exec[Local Runtime (venv)]
     end
     
-    subgraph "Data Layer"
-        DuckDB[(DuckDB)]
-        Vectors[Gemini Embeddings API]
+    subgraph "Public Cloud (Supabase)"
+        PublicDB[(Public Functions)]
+        Auth[Supabase Auth]
+    end
+    
+    subgraph "AI Services"
+        Gemini[Gemini Embeddings API]
     end
 
-    User <-->|JSON-RPC| MCP
-    Launcher <-->|Manage| Manager
+    User <-->|JSON-RPC| CLI
+    CLI --> Manager
     
-    MCP --> Manager
-    MCP --> Search
+    Manager -->|Save/Search| DuckDB[(Local Cache)]
+    Manager -->|Sync| Sync
     
-    Manager -->|Verify Code| Gatekeeper
-    Gatekeeper -->|Install Libs| EnvMgr
-    Gatekeeper -->|Run Tests| EnvMgr
+    Sync <-->|Public Sync| PublicDB
     
-    Manager -->|Save| DuckDB
-    Search -->|Query| Vectors
+    Manager -->|Execute (Optional)| Exec
+    Exec -->|Subprocess| UserEnv[User's Python Env]
 ```
 
 ---
 
-## 3. 品質保証ロジック (The Quality Gate 2.0)
+## 3. 品質保証ポリシー (The "Fast-Pass" Policy)
 
-本システムの肝である **「バックグラウンドでの徹底的な品質チェック」** のフロー定義。
-`save_function` 実行時、以下の **"Three Guardians"** パイプラインを通過したコードのみが `verified` ステータスとして保存される。
+**ユーザーの思考を止めない。**
+保存は「0.1秒」で完了させる。品質チェックはあくまで「事後監査」または「任意実行」。
 
-### 3.1 Guardian 1: The Linter (Ruff)
-コードの整形と基本的なバグを排除する。
-*   **実装**: `uv run ruff check --select E,F,W,I` をサブプロセスで実行。
-*   **基準**:
-    *   エラー (E, F) が1つでもあれば **Reject**。
-    *   Warning (W) は自動修正 (fix) を試みる。
-*   **目的**: PEP8準拠とインポート順の整理を強制。
+### 3.1 非同期監査 (Async Audit)
+*   `save_function` は検証を待たずに完了する。
+*   品質チェック（Lint/Type/Review）は、ユーザーが明示的に `verify_function` を呼んだ時、またはバックグラウンドで空き時間に実行される。
 
-### 3.2 Guardian 2: The Typer (Mypy)
-型安全性を保証する。AIエージェントにとって「型情報」は命綱。
-*   **実装**: `uv run mypy --ignore-missing-imports`。
-*   **基準**:
-    *   関数シグネチャ (`def func(a: int) -> str:`) の型ヒントを推奨。
-    *   致命的な型エラーがあれば **Reject**。
-*   **目的**: エージェントがコードを解析・利用する際の予測可能性を向上。
-
-### 3.3 Guardian 3: The Critic (Gemini LLM)
-人間（またはAI）にとっての「分かりやすさ」を判定する。
-*   **実装**: Gemini API (`gemma-3-27b-it` デフォルト) を使用し、コードを3つの観点で採点 (0-100)。
-    1.  **Readability (可読性)**: 変数名は適切か？ロジックは素直か？
-    2.  **Docstring (文書化)**: エージェントがツールとして使うための説明が十分か？
-    3.  **Reusability (再利用性)**: 特定の環境やパスに依存しすぎていないか？
-*   **基準**: 総合スコア **80点以上** で合格。
-*   **目的**: **「動くゴミ」** の量産を防ぎ、厳選された高品質なスキルのみを資産化。
-
-### 3.4 依存関係の解決 (Dependency Resolution)
-「環境が違うから動かない」を撲滅する。
-*   **ハッシュベース管理**: 依存ライブラリリスト（例: `['numpy', 'pandas']`）をソートしてハッシュ化。
-*   **環境プーリング**: 同一構成の仮想環境 (`.mcp_envs/{hash}`) が存在すれば再利用。なければ `uv` で新規作成。
-*   **タイムアウト設定**: インストール処理は **300秒 (5分)**。
-
-### 3.5 動的テスト実行 (Dynamic Testing)
-AIが提供した `test_cases` を実際に実行し、論理的整合性を保証する。
-*   **隔離実行**: 作成された仮想環境の Python バイナリを使用し、サブプロセス (`subprocess.run`) で実行。
-*   **タイムアウト設定**: **30秒**。無限ループによるリソース枯渇を防止。
-*   **結果フィードバック**: 失敗時は `Traceback` を含む詳細なエラーログをAIに返し、自律的な修正を促す。
+### 3.2 ランタイム (Local Runtime)
+*   **Docker廃止**: Windows環境での互換性と速度を最優先。
+*   **Standard Process**: Python標準の `venv` と `subprocess` を使用して、ユーザーのローカル環境でコードを実行する。
+*   **Sandboxなし**: 「自分の書いたコードを自分のPCで動かす」原則。セキュリティはユーザーの責任範囲とする（プロンプトで警告）。
 
 ---
 
@@ -110,35 +84,53 @@ AIが提供した `test_cases` を実際に実行し、論理的整合性を保�
 |:---|:---|
 | **Server Control** | サーバープロセスの起動・停止・ステータス監視。 |
 | **Function Explorer** | 保存済み関数のリスト表示、詳細確認、削除機能。DuckDB直接参照。 |
-| **Settings** | Embeddingモデル (`gemini-embedding-001`) やQuality Gateモデルの選択、APIキー設定。 |
+| **Team Management** | **[New]** チーム作成・参加、同期状況の確認。 |
+| **Settings** | Embeddingモデル (`gemini-embedding-001`) 、Quality Gateモデル、**[New] Supabase接続情報**の設定。 |
 
 ---
 
 ## 5. データモデル (Database Schema)
 
-DuckDBを使用し、メタデータとベクトルを効率的に管理する。
+### 5.1 Local: DuckDB (`data/mcp.db`)
+メタデータとベクトルを効率的に管理するローカルキャッシュ。
 
-### Table: `functions`
+| Table | カラム構成 (抜粋) | 説明 |
+|:---|:---|:---|
+| `functions` | `id`, `name`, `code`, `description`, `version`, `updated_at` | 関数本体 |
+| `embeddings` | `function_id`, `vector` | ベクトルデータ |
+
+### 5.2 Cloud: Supabase (PostgreSQL)
+チーム共有のための正規化されたデータベース (Phase 1 MVP)。
+Supabaseの **New API Keys (Opaque Keys)** に完全準拠する。
+- **sb_publishable_...**: クライアント側（参照用）。
+- **sb_secret_...**: サーバー側（管理者権限用）。MCPサーバーではこちらを推奨。
+
+#### Table: `teams`
 | カラム名 | 型 | 説明 |
 |:---|:---|:---|
-| `id` | INTEGER | 主キー (Sequence) |
-| `name` | VARCHAR | 関数名 (Unique) |
-| `code` | VARCHAR | Pythonソースコード |
-| `description` | VARCHAR | 自然言語による説明 |
-| `tags` | VARCHAR | タグリスト (JSON) |
-| `metadata` | VARCHAR | 依存関係、検証日時、エラーログ等 (JSON) |
-| `status` | VARCHAR | `'active'` (検証済), `'broken'` (失敗) |
-| `test_cases` | VARCHAR | テストケースリスト (JSON) |
-| `version` | VARCHAR | バージョン番号 |
-| `created_at` | VARCHAR | 作成日時 |
-| `updated_at` | VARCHAR | 更新日時 |
+| `id` | UUID | PK |
+| `name` | TEXT | チーム名 |
+| `created_at` | TIMESTAMPTZ | 作成日時 |
 
-### Table: `embeddings`
+#### Table: `team_members`
 | カラム名 | 型 | 説明 |
 |:---|:---|:---|
-| `function_id` | INTEGER | FK -> functions.id |
-| `vector` | FLOAT[] | 可変次元ベクトル (デフォルト: 3072次元) |
-| `model_name` | VARCHAR | 埋め込み生成に使用したモデル名 (例: `gemini-embedding-001`) |
+| `team_id` | UUID | FK -> teams.id |
+| `user_id` | UUID | FK -> auth.users.id |
+| `role` | TEXT | 'admin', 'member' |
+
+#### Table: `functions` (Shared)
+| カラム名 | 型 | 説明 |
+|:---|:---|:---|
+| `id` | UUID | PK |
+| `team_id` | UUID | FK -> teams.id |
+| `name` | TEXT | 関数名 (Team内でUnique) |
+| `version` | INTEGER | バージョン番号 |
+| `code` | TEXT | ソースコード |
+| `description` | TEXT | 説明 |
+| `metadata` | JSONB | 依存関係、タグなど |
+| `author_id` | UUID | 作成者 |
+| `updated_at` | TIMESTAMPTZ | 更新日時 |
 
 ---
 
@@ -154,3 +146,20 @@ DuckDBを使用し、メタデータとベクトルを効率的に管理する�
     *   `FunctionStore.bat` という単一のエントリーポイント。
     *   黒い画面（コンソール）を見せない GUI ランチャー。
     *   BYOK (Bring Your Own Key) モデル。`GOOGLE_API_KEY` の設定が必要。
+
+---
+
+## 7. 同期戦略 (Sync Strategy)
+
+**Sync Engine** は以下のポリシーでデータの整合性を保つ。
+
+1.  **Trigger**:
+    *   ユーザーが手動で「Sync」ボタンを押した時。
+    *   `save_function` が成功した時（Auto-Sync有効時）。
+    *   アプリ起動時。
+2.  **Direction**:
+    *   **Push**: ローカルの `created_at` がクラウドより新しい場合、クラウドを上書き (Version up)。
+    *   **Pull**: クラウドに新しい関数がある、またはクラウドの `version` がローカルより大きい場合、ローカルに取り込む。
+3.  **Conflict Resolution**:
+    *   **Last Write Wins (LWW)**: タイムスタンプが新しい方を正とする。
+    *   Phase 1では複雑なマージ競合解決は行わない。

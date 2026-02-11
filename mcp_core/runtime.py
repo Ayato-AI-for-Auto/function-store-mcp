@@ -5,7 +5,7 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import List, Dict, Tuple
-from solo_mcp.security import ASTSecurityChecker
+from mcp_core.security import ASTSecurityChecker
 
 logger = logging.getLogger(__name__)
 

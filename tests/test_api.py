@@ -4,7 +4,7 @@ Integration tests for the Function Store REST API using FastAPI TestClient.
 import pytest
 import time
 from fastapi.testclient import TestClient
-from solo_mcp.api import app
+from mcp_core.api import app
 
 # Use a test client to avoid needing a running server
 client = TestClient(app)
@@ -17,7 +17,7 @@ def setup_test_auth(monkeypatch):
     """Ensure auth is mocked for each test."""
     # Mocking verify_api_key to always succeed for testing purposes
     # Mocking verify_api_key to always succeed for testing purposes
-    monkeypatch.setattr("solo_mcp.api.verify_api_key", lambda key: (True, "test_user"))
+    monkeypatch.setattr("mcp_core.api.verify_api_key", lambda key: (True, "test_user"))
     yield
 
 def test_health():

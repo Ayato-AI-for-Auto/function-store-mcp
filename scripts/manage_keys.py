@@ -8,12 +8,12 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from solo_mcp.auth import generate_api_key, revoke_api_key, verify_api_key
+from mcp_core.auth import generate_api_key, revoke_api_key, verify_api_key
 import duckdb
 
 def list_keys():
     """List all API keys."""
-    from solo_mcp.auth import API_KEYS_DB
+    from mcp_core.auth import API_KEYS_DB
     conn = duckdb.connect(str(API_KEYS_DB))
     try:
         results = conn.execute("""

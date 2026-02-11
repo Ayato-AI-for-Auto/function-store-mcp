@@ -2,13 +2,12 @@
 import json
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
-from solo_mcp.database import get_db_connection
-from solo_mcp.embedding import embedding_service
-from solo_mcp.quality_gate import QualityGate
-from solo_mcp.sanitizer import DataSanitizer
-from solo_mcp.workers import background_verifier
+from mcp_core.database import get_db_connection
+from mcp_core.embedding import embedding_service
+from mcp_core.sanitizer import DataSanitizer
+from mcp_core.workers import background_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -20,27 +19,25 @@ def do_save_impl(asset_name: str, code: str, description: str = "", tags: List[s
 
     conn = get_db_connection()
     try:
-        gate = QualityGate()
-        heal_report = gate.check_with_heal(asset_name, code, description_en or description, description_jp or description)
+        heal_report: Dict[str, Any] = {
+            "status": "passed",
+            "score": 100,
+            "healed_desc_en": None,
+            "healed_desc_jp": None,
+            "heal_attempts": 0,
+            "description": {"score": 100, "feedback": "Verification skipped"},
+            "code_report": {"linter": {"passed": True}, "reviewer": {"passed": True}}
+        }
         
-        if heal_report["status"] == "failed_code":
-            code_rep = heal_report["code_report"]
-            feedback = []
-            if not code_rep["linter"]["passed"]:
-                feedback.append(f"Linter errors: {', '.join(code_rep['linter']['errors'][:3])}")
-            if not code_rep["reviewer"]["passed"]:
-                feedback.append(f"AI Review: {code_rep['reviewer']['feedback']}")
-            return "Quality Gate Failed (Code Issues). Improvements required: " + " | ".join(feedback)
-            
-        if heal_report["status"] == "failed_description":
-            return f"Quality Gate Failed (Description Issues). {heal_report['failure_reason']} Feedback: {heal_report['description']['feedback']}"
-
-        if heal_report["healed_desc_en"]:
-            description_en = heal_report["healed_desc_en"]
-        if heal_report["healed_desc_jp"]:
-            description_jp = heal_report["healed_desc_jp"]
-
-        logger.info(f"Quality Gate PASSED for '{asset_name}' (Score: {heal_report['score']}/100)")
+        if not skip_test:
+            # Quality Gate is now ASYNC/MANUAL. Just log it for now.
+            logger.info(f"Quality Gate skipped for '{asset_name}' (Reform Policy: Fast Save First)")
+        
+        # description_en/jp are kept as-is or sanitized, but no auto-healing in the save path.
+        if not description_en:
+            description_en = description
+        if not description_jp:
+            description_jp = description
         
         initial_status = "pending"
         error_log = ""

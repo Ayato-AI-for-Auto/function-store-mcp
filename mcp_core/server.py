@@ -7,14 +7,14 @@ from typing import List, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 from logging.handlers import RotatingFileHandler
 
-from solo_mcp.config import (
+from mcp_core.config import (
     DATA_DIR, TRANSPORT
 )
-from solo_mcp.database import get_db_connection, init_db, _check_model_version
-from solo_mcp.workers import (
+from mcp_core.database import get_db_connection, init_db, _check_model_version
+from mcp_core.workers import (
     translation_worker, sync_agent, dashboard_exporter
 )
-from solo_mcp.logic import (
+from mcp_core.logic import (
     do_save_impl as _do_save_impl,
     do_search_impl as _do_search_impl,
     do_get_impl as _do_get_impl,
@@ -114,6 +114,21 @@ def import_function_pack(json_data: str) -> str:
         return f"Imported {len(data)} functions: " + " | ".join(results[:3]) + ("..." if len(results) > 3 else "")
     except Exception as e:
         return f"Error: {str(e)}"
+
+@mcp.tool()
+def login(email: str, password: str) -> str:
+    """Log in to the Function Store Cloud (Supabase)."""
+    from mcp_core.supabase_client import supabase_client
+    if supabase_client.login(email, password):
+        return "SUCCESS: Logged in. Your functions will now stick to the cloud."
+    return "Error: Login failed. Check your email/password."
+
+@mcp.tool()
+def sync_now() -> str:
+    """Force a sync with the public cloud."""
+    from mcp_core.workers import sync_agent
+    sync_agent.sync_engine.sync_all()
+    return "SUCCESS: Sync triggered in background."
 
 # --- Main Server Execution ---
 if __name__ == "__main__":

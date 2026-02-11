@@ -19,10 +19,10 @@ function Start-Step($Name, $Command) {
 Write-Host "Starting Local CI & Auto-Push..." -ForegroundColor Cyan
 
 # 1. Linting
-Start-Step "Ruff Linting" "uv run ruff check solo_mcp frontend tests"
+Start-Step "Ruff Linting" "uv run ruff check mcp_core frontend tests"
 
 # 2. Type Checking
-Start-Step "Mypy Type Checking" "uv run mypy solo_mcp --ignore-missing-imports"
+Start-Step "Mypy Type Checking" "uv run mypy mcp_core --ignore-missing-imports"
 
 # 3. Testing
 Start-Step "Pytest" "uv run pytest tests"
