@@ -59,6 +59,14 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 QUALITY_GATE_MODEL = get_setting("FS_QUALITY_GATE_MODEL", LLM_MODEL_ID)
 DESCRIPTION_MODEL = get_setting("FS_DESCRIPTION_MODEL", LLM_MODEL_ID)
 
+# Sync Config (GitHub Serverless DB)
+SYNC_ENABLED = get_setting("FS_SYNC_ENABLED", "True").lower() == "true"
+SYNC_REPO_URL = get_setting(
+    "FS_SYNC_REPO_URL", "https://github.com/Ayato-AI-for-Auto/function-store-hub.git"
+)
+SYNC_LOCAL_DIR = DATA_DIR / "hub_cache"
+SYNC_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+
 # Execution Runtime Config
 # Options: "auto" (local venv), "docker" (containerized), "cloud" (managed)
 EXECUTION_MODE = get_setting("FS_EXECUTION_MODE", "auto")

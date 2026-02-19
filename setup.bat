@@ -68,11 +68,22 @@ echo [INFO] Verifying installation...
 .venv\Scripts\python.exe -c "from llama_cpp import Llama; print('[OK] llama-cpp-python')"
 .venv\Scripts\python.exe -c "import duckdb; print('[OK] DuckDB')"
 
+:: 6. Register MCP Server (Cursor Global + Claude Desktop)
+echo.
+echo [INFO] Registering MCP Server for AI clients...
+.venv\Scripts\python.exe register_mcp.py
+echo [OK] MCP registration complete.
+
 echo.
 echo ============================================
 echo   Setup Complete!
 echo ============================================
 echo.
-echo   Next: Run FunctionStore.bat to launch.
+echo   - Cursor / Antigravity: Auto-registered (workspace config included)
+echo   - Claude Desktop:       Registered via register_mcp.py
+echo   - Cline:                See README.md for manual setup
+echo.
+echo   Next: Run FunctionStore.bat to launch the Dashboard.
+echo         AI agents can now use Function Store as an MCP server.
 echo.
 pause

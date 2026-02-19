@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import numpy as np
 from mcp_core.core.config import CACHE_DIR, EMBEDDING_MODEL_ID
@@ -14,32 +15,48 @@ class FastEmbeddingService:
     Local Embedding Service using FastEmbed (ONNX).
     """
 
+    _client_instance = None
+    _init_lock = threading.Lock()
+
     def __init__(self):
         self.model_name = EMBEDDING_MODEL_ID
-        self.client = None
         self._initialized = False
 
-        try:
-            from fastembed import TextEmbedding
-
-            logger.info(f"FastEmbeddingService: Loading model '{self.model_name}'...")
-            self.client = TextEmbedding(
-                model_name=self.model_name, cache_dir=str(CACHE_DIR)
-            )
+    def _ensure_initialized(self):
+        """Lazy initialization of the FastEmbed client (Singleton)."""
+        if FastEmbeddingService._client_instance is not None:
             self._initialized = True
-            logger.info("FastEmbeddingService: Initialized successfully.")
-        except ImportError:
-            logger.error(
-                "FastEmbeddingService: 'fastembed' not installed. Run 'uv pip install fastembed'."
-            )
-        except Exception as e:
-            logger.error(f"FastEmbeddingService: Initialization Failed: {e}")
+            return
+
+        with FastEmbeddingService._init_lock:
+            if FastEmbeddingService._client_instance is not None:
+                self._initialized = True
+                return
+
+            try:
+                from fastembed import TextEmbedding
+
+                logger.info(
+                    f"FastEmbeddingService: Loading model '{self.model_name}'..."
+                )
+                FastEmbeddingService._client_instance = TextEmbedding(
+                    model_name=self.model_name, cache_dir=str(CACHE_DIR)
+                )
+                self._initialized = True
+                logger.info("FastEmbeddingService: Initialized successfully.")
+            except ImportError:
+                logger.error(
+                    "FastEmbeddingService: 'fastembed' not installed. Run 'uv pip install fastembed'."
+                )
+            except Exception as e:
+                logger.error(f"FastEmbeddingService: Initialization Failed: {e}")
 
     def get_embedding(self, text: str, is_query: bool = False) -> np.ndarray:
         """
         Get embedding vector using FastEmbed.
         """
-        if not self._initialized or not self.client:
+        self._ensure_initialized()
+        if not self._initialized or not FastEmbeddingService._client_instance:
             # Mock fallback if not initialized
             logger.warning(
                 f"FastEmbeddingService not ready. Using zero vector for '{text[:20]}...'"
@@ -48,7 +65,7 @@ class FastEmbeddingService:
 
         try:
             # FastEmbed returns a generator of numpy arrays
-            embeddings = list(self.client.embed([text]))
+            embeddings = list(FastEmbeddingService._client_instance.embed([text]))
             if not embeddings:
                 return np.zeros(768, dtype=np.float32)
 

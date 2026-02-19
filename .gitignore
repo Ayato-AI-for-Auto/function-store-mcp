@@ -25,6 +25,8 @@ MANIFEST
 .venv/
 venv/
 ENV/
+.env
+.env.*
 
 # DuckDB / SQLite / Local DB
 *.db

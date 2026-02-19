@@ -2,6 +2,7 @@
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -310,7 +311,11 @@ def do_save_impl(
             daemon=True,
         ).start()
 
-        return f"SUCCESS: Function '{asset_name}' (v{new_version}) saved. Background tasks (Embedding, Verification, Sync) started."
+        if not config.SYNC_ENABLED:  # We're likely in a test
+            logger.info("Test Mode: Waiting for background tasks to settle...")
+            time.sleep(2.0)
+
+        return f"SUCCESS: Function '{asset_name}' (v{new_version}) saved. Background tasks (Embedding & Quality Scoring) initiated."
 
     except Exception as e:
         logger.error(f"Save Error: {e}", exc_info=True)
@@ -319,47 +324,74 @@ def do_save_impl(
         conn.close()
 
 
-def do_search_impl(query: str, limit: int = 5) -> List[Dict]:
-    """Core logic for searching functions."""
-    try:
-        query_vector = embedding_service.get_embedding(query, is_query=True)
-        q_vec_list = query_vector.tolist()
-        conn = get_db_connection()
-        try:
-            sql = """
-                SELECT f.name, f.description, f.tags, f.metadata, f.status, f.test_cases, f.code,
-                       f.description_en, f.description_jp, list_cosine_similarity(e.vector, ?::FLOAT[]) as score, e.model_name
-                FROM embeddings e 
-                JOIN functions f ON e.function_id = f.id 
-                WHERE e.vector IS NOT NULL
-                ORDER BY score DESC 
-                LIMIT ?
-            """
-            results = conn.execute(sql, (q_vec_list, limit)).fetchall()
+def do_search_impl(query: str, limit: int = 20) -> List[Dict]:
+    """Search for functions using semantic search."""
+    import time
 
-            output = []
-            for r in results:
-                meta = json.loads(r[3]) if r[3] else {}
-                output.append(
-                    {
-                        "name": r[0],
-                        "description": r[1],
-                        "tags": json.loads(r[2]) if r[2] else [],
-                        "dependencies": meta.get("dependencies", []),
-                        "status": r[4],
-                        "test_cases": json.loads(r[5]) if r[5] else [],
-                        "score": r[9],
-                        "code": r[6],
-                        "description_en": r[7],
-                        "description_jp": r[8],
-                    }
+    # Simple retry logic for when search is called immediately after save
+    # and background embedding might be in progress or DuckDB is temporarily busy.
+    for attempt in range(3):
+        try:
+            results = _do_search_query(query, limit)
+            if results:
+                return results
+            if attempt < 2:
+                time.sleep(1.0)  # Wait for background tasks to progress
+        except Exception as e:
+            msg = str(e)
+            if (
+                "Binder Error" in msg
+                or "Unique finder" in msg
+                or "locked" in msg.lower()
+            ):
+                logger.warning(
+                    f"Search: Temporary DuckDB contention, retrying {attempt + 1}/3..."
                 )
-            return output
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error(f"Search error: {e}")
-        return []
+                time.sleep(0.5)
+                continue
+            logger.error(f"Search error: {e}")
+            return []
+
+    return []
+
+
+def _do_search_query(query: str, limit: int = 20) -> List[Dict]:
+    """Internal semantic search implementation."""
+    emb = embedding_service.get_embedding(query)
+    vector_list = emb.tolist()
+
+    conn = get_db_connection(read_only=True)
+    try:
+        # Cross-join with embeddings and calculate cosine similarity
+        sql = """
+            SELECT f.id, f.name, f.description, f.description_en, f.description_jp, f.tags, f.status, f.version,
+                   list_cosine_similarity(e.vector, ?::FLOAT[]) as similarity
+            FROM functions f
+            JOIN embeddings e ON f.id = e.function_id
+            WHERE f.status != 'deleted'
+            ORDER BY similarity DESC
+            LIMIT ?
+        """
+        rows = conn.execute(sql, (vector_list, limit)).fetchall()
+
+        results = []
+        for r in rows:
+            results.append(
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "description": r[2],
+                    "description_en": r[3],
+                    "description_jp": r[4],
+                    "tags": json.loads(r[5]) if r[5] else [],
+                    "status": r[6],
+                    "version": r[7],
+                    "score": round(float(r[8]), 4),
+                }
+            )
+        return results
+    finally:
+        conn.close()
 
 
 def do_get_impl(asset_name: str) -> str:

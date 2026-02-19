@@ -13,36 +13,36 @@ def get_db_connection(read_only=False):
     """Gets a connection to the DuckDB database with retry logic for Windows lock contention."""
     import time
 
-    max_retries = 5
-    retry_delay = 0.1  # seconds
+    max_retries = 10
+    retry_delay = 0.2  # seconds
 
     last_err = None
     for attempt in range(max_retries):
         try:
-            # We must re-import or look up dynamically to catch the monkeypatch
-            import mcp_core.core.config as cfg
-
-            db_path = str(cfg.DB_PATH)
-            # Ensure directory exists (skip for in-memory DB)
+            # Consistent path and config
+            db_path = str(config.DB_PATH)
             if db_path != ":memory:":
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
+            # DuckDB allows multiple connections to the same file in the SAME process
+            # if they share the same configuration. We use defaults.
             conn = duckdb.connect(db_path, read_only=read_only)
             return conn
         except (duckdb.IOException, duckdb.Error) as e:
             last_err = e
+            # Windows sharing violation or DuckDB lock
+            msg = str(e).lower()
             if (
-                "process cannot access the file" in str(e).lower()
-                or "is in use" in str(e).lower()
-                or attempt < 2
+                "process cannot access the file" in msg
+                or "is in use" in msg
+                or "locked" in msg
+                or "already open" in msg
             ):
-                time.sleep(retry_delay * (2**attempt))  # Exponential backoff
+                time.sleep(retry_delay * (1.5**attempt))  # Exponential backoff
                 continue
             raise
 
-    logger.error(
-        f"Failed to connect to DuckDB after {max_retries} attempts: {last_err}"
-    )
+    logger.error(f"DuckDB Connection Failed after {max_retries} retries: {last_err}")
     raise last_err
 
 

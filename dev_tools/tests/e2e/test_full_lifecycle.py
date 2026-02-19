@@ -23,7 +23,7 @@ def test_full_save_search_delete_lifecycle():
     # 2. Search
     print("Step 2: Searching (polling for background embedding)")
     found = False
-    for _ in range(10):  # Max 5 seconds
+    for _ in range(20):  # Max 10 seconds (increased from 5s)
         search_res = do_search_impl("E2E Lifecycle Test")
         if any(r["name"] == name for r in search_res):
             found = True

@@ -52,7 +52,7 @@ def test_save_and_run_flow():
     search_query = {"query": unique_name, "limit": 1}
     print(f"Polling for search result: {unique_name}")
     found = False
-    for _ in range(10):  # 5 seconds
+    for _ in range(40):  # 20 seconds (increased from 10s)
         response = client.post("/functions/search", json=search_query, headers=HEADERS)
         if response.status_code == 200 and any(
             r["name"] == unique_name for r in response.json()

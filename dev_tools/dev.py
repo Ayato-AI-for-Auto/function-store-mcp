@@ -25,17 +25,17 @@ def run_command(cmd, name):
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
         # Use capture_output=False to let it stream to terminal
-        result = subprocess.run(cmd, shell=True, capture_output=False, cwd=root_dir)
+        cp = subprocess.run(cmd, shell=True, capture_output=False, cwd=root_dir)
     except Exception as e:
         print(f"[ERROR] Unexpected error running command '{cmd}': {e}")
         return False
 
     elapsed = time.time() - start
-    if result.returncode == 0:
+    if cp.returncode == 0:
         print(f"[SUCCESS] {name} completed in {elapsed:.2f}s")
     else:
-        print(f"[FAIL] {name} failed with exit code {result.returncode}")
-    return result.returncode == 0
+        print(f"[FAIL] {name} failed with exit code {cp.returncode}")
+    return cp.returncode == 0
 
 
 def main():
@@ -48,10 +48,32 @@ def main():
         parser.add_argument(
             "-m", "--message", type=str, help="Commit message for --ship"
         )
+        parser.add_argument("--publish", type=str, help="Publish a function to the Hub")
+        parser.add_argument(
+            "--publish-all",
+            action="store_true",
+            help="Publish ALL functions to the Hub",
+        )
         args = parser.parse_args()
 
         # Always clean garbage first
         clean_garbage()
+
+        # Handle Sync Publish (Special Case, doesn't require full CI)
+        if args.publish or args.publish_all:
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+            from mcp_core.engine.sync_engine import sync_engine
+
+            if args.publish_all:
+                print("[INFO] Publishing ALL local functions to Hub...")
+                sync_engine.publish_all()
+            else:
+                print(f"[INFO] Publishing '{args.publish}' to Hub...")
+                if sync_engine.push(args.publish):
+                    print(f"[SUCCESS] '{args.publish}' published successfully.")
+                else:
+                    print(f"[FAIL] Failed to publish '{args.publish}'.")
+            sys.exit(0)
 
         success = True
 

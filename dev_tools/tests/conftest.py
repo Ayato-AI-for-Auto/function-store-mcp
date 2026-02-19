@@ -25,6 +25,8 @@ def setup_db_isolation(monkeypatch, tmp_path):
     # 1. Patch the global config source of truth
     monkeypatch.setattr(mcp_core.core.config, "DB_PATH", test_db_path)
     monkeypatch.setattr(mcp_core.core.config, "API_KEYS_DB_PATH", test_keys_path)
+    # Disable features that are non-deterministic or slow in tests
+    monkeypatch.setattr(mcp_core.core.config, "SYNC_ENABLED", False)
 
     # 2. Force initialization of the fresh DB
     init_db()
