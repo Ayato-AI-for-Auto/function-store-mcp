@@ -43,17 +43,21 @@ HOST = get_setting("FS_HOST", "0.0.0.0")
 PORT = int(get_setting("FS_PORT", "8001"))
 TRANSPORT = get_setting("FS_TRANSPORT", "stdio")
 
-# Embedding Config
-# Embedding Config (Google AI API)
-MODEL_NAME = get_setting("FS_MODEL_NAME", "models/gemini-embedding-001")
-# Google API Key for Gemini/Gemma
-GOOGLE_API_KEY = get_setting("GOOGLE_API_KEY")
+# Local AI Config
+EMBEDDING_MODEL_ID = get_setting(
+    "FS_EMBEDDING_MODEL_ID", "jinaai/jina-embeddings-v2-base-code"
+)
+LLM_MODEL_ID = get_setting("FS_LLM_MODEL_ID", "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF")
+GGUF_FILENAME = get_setting("FS_GGUF_FILENAME", "qwen2.5-coder-3b-instruct-q4_k_m.gguf")
 
-# Quality Gate Config (Google AI API)
-QUALITY_GATE_MODEL = get_setting(
-    "FS_QUALITY_GATE_MODEL", "gemma-3-27b-it"
-)  # Fallback to stable
-DESCRIPTION_MODEL = get_setting("FS_DESCRIPTION_MODEL", "gemma-3-27b-it")
+# Models Cache Directory
+CACHE_DIR = DATA_DIR / "models"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Quality Gate Config (Local AI)
+# We use the same LLM for both description and quality scoring if needed
+QUALITY_GATE_MODEL = get_setting("FS_QUALITY_GATE_MODEL", LLM_MODEL_ID)
+DESCRIPTION_MODEL = get_setting("FS_DESCRIPTION_MODEL", LLM_MODEL_ID)
 
 # Execution Runtime Config
 # Options: "auto" (local venv), "docker" (containerized), "cloud" (managed)

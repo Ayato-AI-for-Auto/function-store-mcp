@@ -152,7 +152,7 @@ def init_db():
 
             # Automatic Migration: Re-calculate embeddings for legacy records using CURRENT model
             logger.info(
-                f"Migrating DB: Re-calculating legacy embeddings using current model '{config.MODEL_NAME}'..."
+                f"Migrating DB: Re-calculating legacy embeddings using current model '{config.EMBEDDING_MODEL_ID}'..."
             )
 
             legacy_rows = conn.execute("""
@@ -177,7 +177,7 @@ def init_db():
 
                     conn.execute(
                         "UPDATE embeddings SET vector = ?, model_name = ?, dimension = ?, encoded_at = CURRENT_TIMESTAMP WHERE function_id = ?",
-                        (vector_list, config.MODEL_NAME, len(vector_list), fid),
+                        (vector_list, config.EMBEDDING_MODEL_ID, len(vector_list), fid),
                     )
                     count += 1
                 except Exception as e:

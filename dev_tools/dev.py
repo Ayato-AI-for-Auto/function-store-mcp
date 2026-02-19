@@ -57,11 +57,11 @@ def main():
 
         if not args.test_only:
             # 1. Ruff Check
-            if not run_command("uv run ruff check --fix", "Ruff Lint & Fix"):
+            if not run_command("uv run --no-sync ruff check --fix", "Ruff Lint & Fix"):
                 success = False
 
             # 2. Ruff Format
-            if not run_command("uv run ruff format", "Ruff Format"):
+            if not run_command("uv run --no-sync ruff format", "Ruff Format"):
                 success = False
 
         if not args.lint_only:
