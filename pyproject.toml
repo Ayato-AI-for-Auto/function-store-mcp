@@ -11,21 +11,30 @@ dependencies = [
     "psutil", # For process management
     "tqdm>=4.66.0", # Fix for TMonitor import error
     "pyinstaller>=6.3.0",
-    "pyinstaller>=6.3.0",
     "flet>=0.21.0",
+    "flet-charts>=0.80.5",
     "keyring", # For secure storage of API keys
-    "ruff>=0.1.0", # Quality Gate: Linter
-    "mypy>=1.6.0", # Quality Gate: Type Checker
+    "ruff>=0.1.0", # Quality Gate: Linter & Formatter
     "pytest>=8.0.0", # Testing
-    "supabase>=2.28.0",
+    "python-dotenv>=1.0.0",
+    "fastapi",
+    "httpx",
+    "pytest-asyncio",
 ]
 
 [project.scripts]
 mcp-core = "mcp_core.server:main"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.ruff]
+line-length = 88
+target-version = "py310"
 
-[tool.hatch.build.targets.wheel]
-packages = ["mcp_core"]
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["W292", "E501", "W291", "W293"]
+
+[tool.pytest.ini_options]
+testpaths = ["dev_tools/tests"]
+pythonpath = ["backend"]
+asyncio_mode = "auto"
+addopts = "--basetemp=dev_tools/tests/test_data"

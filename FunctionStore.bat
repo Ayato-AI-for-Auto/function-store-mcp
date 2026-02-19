@@ -36,10 +36,10 @@ if not exist .venv (
 echo [INFO] Environment check complete.
 echo [INFO] Mode: Public-First / Local-Compute
 
-:: 4. Launch Dashboard
-echo [INFO] Launching Function Store Dashboard...
+:: 4. Launch via main.py
+echo [INFO] Launching Function Store...
 echo.
-.venv\Scripts\python.exe frontend\dashboard.py
+.venv\Scripts\python.exe main.py
 if %errorlevel% neq 0 (
     echo [ERROR] Dashboard failed to start.
     echo [TIP] Try running: uv pip install -e .

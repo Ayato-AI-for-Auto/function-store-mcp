@@ -52,6 +52,7 @@ pytest_fail*.txt
 .mypy_cache/
 .mcp_deps/
 .mcp_envs/
+dev_tools/tests/test_data/
 
 # Node/Frontend (if any)
 node_modules/
