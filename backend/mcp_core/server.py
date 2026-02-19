@@ -55,7 +55,17 @@ mcp = FastMCP("Function Store", dependencies=["uvicorn"])
 
 @mcp.tool()
 def search_functions(query: str, limit: int = 5) -> List[Dict]:
-    """Search for reusable Python functions using natural language query."""
+    """
+    Search for reusable Python functions using natural language queries and semantic similarity.
+    Use this to find existing logic before writing new code to avoid "reinventing the wheel".
+    
+    Args:
+        query: A natural language description of the functionality needed (e.g., "resize image", "calculate distance").
+        limit: Max number of results (default 5).
+        
+    Returns:
+        List of function metadata objects, including name, description, and quality score.
+    """
     return _do_search_impl(query, limit)
 
 
@@ -63,7 +73,18 @@ def search_functions(query: str, limit: int = 5) -> List[Dict]:
 def list_functions(
     query: Optional[str] = None, tag: Optional[str] = None, limit: int = 100
 ) -> List[Dict]:
-    """List functions with optional filtering by query or tag."""
+    """
+    List all stored functions with optional exact-match filtering.
+    Use this for browsing the collection or finding functions by specific tags.
+    
+    Args:
+        query: Keyword to search for in name or description (case-insensitive exact match).
+        tag: Specific tag to filter by (e.g., "math", "image-processing").
+        limit: Max number of results (default 100).
+        
+    Returns:
+        List of function metadata objects.
+    """
     # We'll need to implement this in logic.py or just do it here for now
     # Let's add it to logic.py for consistency
     from mcp_core.engine.logic import do_list_impl
@@ -71,7 +92,7 @@ def list_functions(
     return do_list_impl(query=query, tag=tag, limit=limit)
 
 
-@mcp.tool()
+# Internal statistic tool (Not exposed to MCP)
 def get_dashboard_stats() -> Dict:
     """Get summarized statistics for the dashboard."""
     from mcp_core.engine.logic import get_stats_impl
@@ -91,7 +112,22 @@ def save_function(
     description_en: Optional[str] = None,
     description_jp: Optional[str] = None,
 ) -> str:
-    """Saves a Python function to the persistent vector store."""
+    """
+    Saves or updates a Python function in the persistent vector store.
+    Automatically triggers AST analysis, quality checks (Ruff), and embedding generation.
+    
+    Args:
+        name: Unique identifier for the function (e.g., "calculate_bmi").
+        code: Full Python source code of the function.
+        description: Primary documentation for humans and AI search.
+        tags: List of categories for easy discovery.
+        dependencies: External library names (pip) required by the function.
+        test_cases: List of inputs/outputs to verify correctness.
+        skip_test: If True, skips functional tests (useful for rapid sketching).
+        
+    Returns:
+        Confirmation message with version number.
+    """
     return _do_save_impl(
         name,
         code,
@@ -107,19 +143,46 @@ def save_function(
 
 @mcp.tool()
 def delete_function(name: str) -> str:
-    """Delete a function from the store by name."""
+    """
+    Permanently deletes a function and all its version history from the store.
+    Use this only when code is obsolete or incorrect.
+    
+    Args:
+        name: Name of the function to delete.
+        
+    Returns:
+        Success or error message.
+    """
     return _do_delete_impl(name)
 
 
 @mcp.tool()
 def get_function(name: str) -> str:
-    """Get the source code of a specific function by name."""
+    """
+    Retrieves the raw Python source code of a specific function.
+    Use this when you want to use the function logic in your current project.
+    
+    Args:
+        name: Name of the function to retrieve.
+        
+    Returns:
+        Python source code as a string, or error message if not found.
+    """
     return _do_get_impl(name)
 
 
 @mcp.tool()
 def get_function_details(name: str) -> Dict:
-    """Get all metadata and code for a specific function."""
+    """
+    Retrieves the full metadata for a function, including quality metrics and test status.
+    Use this to understand the reliability and origins of a code asset.
+    
+    Args:
+        name: Name of the function.
+        
+    Returns:
+        Detailed dictionary of metadata, including tags, call counts, and quality score.
+    """
     from mcp_core.engine.logic import do_get_details_impl
 
     return do_get_details_impl(name)
@@ -127,11 +190,20 @@ def get_function_details(name: str) -> Dict:
 
 @mcp.tool()
 def get_function_history(name: str) -> List[Dict]:
-    """Retrieve the version history of a function."""
+    """
+    Retrieves the complete version history of a function.
+    Useful for tracking changes or rolling back to previous logic.
+    
+    Args:
+        name: Name of the function.
+        
+    Returns:
+        List of historical versions with descriptions and timestamps.
+    """
     return _do_get_history_impl(name)
 
 
-@mcp.tool()
+# Internal batch tool (Not exposed to MCP)
 def import_function_pack(json_data: str) -> str:
     """Import a list of functions from a JSON string."""
     try:
@@ -164,7 +236,16 @@ def import_function_pack(json_data: str) -> str:
 
 @mcp.tool()
 def get_triage_list(limit: int = 5) -> List[Dict]:
-    """Identify functions that need attention (low quality or failed tests)."""
+    """
+    Identifies "broken" functions in the store that need human or AI attention.
+    Prioritizes functions with failed tests or low quality scores.
+    
+    Args:
+        limit: Max number of candidates (default 5).
+        
+    Returns:
+        List of summaries for functions requiring maintenance.
+    """
     from mcp_core.engine.triage import triage_engine
 
     return triage_engine.get_broken_functions(limit)
@@ -172,8 +253,16 @@ def get_triage_list(limit: int = 5) -> List[Dict]:
 
 @mcp.tool()
 def get_fix_advice(name: str) -> str:
-    """Get precise diagnostic advice on how to fix a specific function.
-    Returns the error logs and a suggested repair strategy from the local LLM."""
+    """
+    Generates a detailed "Repair Manual" for a broken function using a local LLM.
+    Use this when you encounter a function with a low score and want to fix it.
+    
+    Args:
+        name: Name of the function to analyze.
+        
+    Returns:
+        Diagnostic report including lint errors, test results, and step-by-step fix strategy.
+    """
     from mcp_core.engine.triage import triage_engine
 
     report = triage_engine.get_diagnostic_report(name)
