@@ -127,6 +127,10 @@ def save_function(
         
     Returns:
         Confirmation message with version number.
+        
+    Note:
+        IMPORTANT: This system does NOT manage cross-function dependencies (e.g., Function A calling Function B stored in the same store). 
+        To ensure portability, please save interdependent functions as a single, self-contained code unit (Integrated Version).
     """
     return _do_save_impl(
         name,
