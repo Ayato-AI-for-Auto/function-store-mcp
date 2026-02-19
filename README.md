@@ -9,6 +9,9 @@ AIエージェント（Cursor, Cline, Antigravity等）が生成したPython関�
 - **Quality Gate**: Ruff Lint + AST静的解析による自動品質チェック。
 - **GitHub Sync**: GitHub Public Repositoryへの自動バックアップ＆共有。
 - **Unified Interface**: MCP Server (stdio) / Dashboard (Flet) / REST API (FastAPI)
+- **Unified AI Engine**: Local LLM (Qwen-2.5-Coder) handles description generation and "Health Check" diagnostics.
+- **Security First**: AST-based code analysis and automatic secret scanning.
+- **Supported Languages**: Python (.py) and JavaScript (.js).
 
 ---
 
