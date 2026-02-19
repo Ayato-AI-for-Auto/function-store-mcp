@@ -362,14 +362,15 @@ def _do_search_query(query: str, limit: int = 20) -> List[Dict]:
 
     conn = get_db_connection(read_only=True)
     try:
-        # Cross-join with embeddings and calculate cosine similarity
+        # Cross-join with embeddings and calculate hybrid semantic/quality score
         sql = """
             SELECT f.id, f.name, f.description, f.description_en, f.description_jp, f.tags, f.status, f.version,
-                   list_cosine_similarity(e.vector, ?::FLOAT[]) as similarity
+                   list_cosine_similarity(e.vector, ?::FLOAT[]) as similarity,
+                   COALESCE(CAST(json_extract(f.metadata, '$.quality_score') AS INTEGER), 50) as qs
             FROM functions f
             JOIN embeddings e ON f.id = e.function_id
             WHERE f.status != 'deleted'
-            ORDER BY similarity DESC
+            ORDER BY (similarity * 0.7 + (qs / 100.0) * 0.3) DESC
             LIMIT ?
         """
         rows = conn.execute(sql, (vector_list, limit)).fetchall()
@@ -386,7 +387,9 @@ def _do_search_query(query: str, limit: int = 20) -> List[Dict]:
                     "tags": json.loads(r[5]) if r[5] else [],
                     "status": r[6],
                     "version": r[7],
-                    "score": round(float(r[8]), 4),
+                    "similarity": round(float(r[8]), 4),
+                    "quality_score": r[9],
+                    "score": round(float(r[8]) * 0.7 + (r[9] / 100.0) * 0.3, 4),
                 }
             )
         return results

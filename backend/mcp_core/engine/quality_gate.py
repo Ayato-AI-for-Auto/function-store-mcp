@@ -133,10 +133,17 @@ class QualityGate:
             "formatter": {"passed": True, "feedback": ""},
         }
 
-        # 1. Linter (Minus 10 points per error, max 70)
+        # 1. Linter (Normalized by Error Density: errors / lines)
         l_pass, l_errs = self.processor.lint(code)
         report["linter"] = {"passed": l_pass, "errors": l_errs}
-        linter_penalty = min(len(l_errs) * 10, 70)
+
+        # Calculate line count (min 1 to avoid ZeroDivision)
+        line_count = max(code.count("\n") + 1, 1)
+        error_density = len(l_errs) / line_count
+
+        # Linter Penalty: Density-based scaling (max 70 points)
+        # e.g., 1 error in 10 lines (10% density) -> 50 points penalty
+        linter_penalty = min(error_density * 500, 70)
 
         # 2. Formatter (Flat 30 points penalty if fails)
         f_pass, f_msg = self.processor.format_check(code)
