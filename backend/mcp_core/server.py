@@ -162,6 +162,36 @@ def import_function_pack(json_data: str) -> str:
         return f"Error: {str(e)}"
 
 
+@mcp.tool()
+def get_triage_list(limit: int = 5) -> List[Dict]:
+    """Identify functions that need attention (low quality or failed tests)."""
+    from mcp_core.engine.triage import triage_engine
+
+    return triage_engine.get_broken_functions(limit)
+
+
+@mcp.tool()
+def get_fix_advice(name: str) -> str:
+    """Get precise diagnostic advice on how to fix a specific function.
+    Returns the error logs and a suggested repair strategy from the local LLM."""
+    from mcp_core.engine.triage import triage_engine
+
+    report = triage_engine.get_diagnostic_report(name)
+    if not report:
+        return f"Error: Function '{name}' not found."
+
+    # Generate advice using LLM
+    advice = triage_engine.generate_repair_advice(report)
+
+    return (
+        f"--- Diagnostic Report for '{name}' ---\n"
+        f"Status: {report['status']}\n"
+        f"Quality Score: {report['quality_score']}\n\n"
+        f"Repair Advice (Local LLM):\n{advice}\n\n"
+        f"Code to Fix:\n```python\n{report['code']}\n```"
+    )
+
+
 def main():
     """Entry point for the mcp-core server."""
     init_db()
