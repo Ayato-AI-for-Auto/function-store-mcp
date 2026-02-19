@@ -6,6 +6,7 @@ Usage:
     python register_mcp.py --cursor         # Register for Cursor only
     python register_mcp.py --claude         # Register for Claude Desktop only
     python register_mcp.py --antigravity    # Register for Antigravity only
+    python register_mcp.py --gemini         # Register for Gemini CLI only
     python register_mcp.py --unregister     # Remove from all clients
 """
 
@@ -43,6 +44,7 @@ def _config_paths():
         "cursor": home / ".cursor" / "mcp.json",
         "antigravity": home / ".gemini" / "antigravity" / "mcp_config.json",
         "claude": appdata / "Claude" / "claude_desktop_config.json",
+        "gemini": home / ".gemini" / "settings.json",
     }
 
 
@@ -94,6 +96,9 @@ def main():
     parser.add_argument(
         "--claude", action="store_true", help="Register for Claude Desktop only"
     )
+    parser.add_argument(
+        "--gemini", action="store_true", help="Register for Gemini CLI only"
+    )
     parser.add_argument("--unregister", action="store_true", help="Remove registration")
     args = parser.parse_args()
 
@@ -107,6 +112,8 @@ def main():
         targets["antigravity"] = paths["antigravity"]
     elif args.claude:
         targets["claude"] = paths["claude"]
+    elif args.gemini:
+        targets["gemini"] = paths["gemini"]
     else:
         targets = paths
 

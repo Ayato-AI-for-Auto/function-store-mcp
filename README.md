@@ -24,7 +24,7 @@ setup.bat        # 環境構築 + MCP自動登録
 FunctionStore.bat  # Dashboard起動
 ```
 
-`setup.bat` を実行すると、依存関係のインストールに加えて **Cursor / Antigravity / Claude Desktop への MCP サーバー登録が自動的に行われます。**
+`setup.bat` を実行すると、依存関係のインストールに加えて **対話形式で MCP サーバーの登録先を選択できます（Cursor / Antigravity / Claude Desktop / Gemini CLI / 全部）。**
 
 ---
 
@@ -35,7 +35,8 @@ FunctionStore.bat  # Dashboard起動
 | クライアント | 方式 | 操作 |
 |---|---|---|
 | **Cursor** | ワークスペース自動検出 | クローン後、プロジェクトを開くだけ |
-| **Claude Desktop** | `setup.bat` で自動登録 | `setup.bat` 実行後、Claude Desktop を再起動 |
+| **Claude Desktop** | `setup.bat` で選択登録 | `setup.bat` 実行後、Claude Desktop を再起動 |
+| **Gemini CLI** | `setup.bat` で選択登録 | `setup.bat` 実行後、`gemini` コマンドで `/mcp` を確認 |
 | **Antigravity** | 手動登録 | 下記の JSON を設定 UI から追加 |
 | **Cline** | 手動登録 | 下記の JSON を設定ファイルに追加 |
 
@@ -72,6 +73,7 @@ Cline やその他のクライアントは、以下の JSON を設定ファイ�
 | Cline | VS Code サイドバー → Cline → 歯車 → MCP Servers → Edit MCP Settings |
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` |
 | Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Gemini CLI | `~/.gemini/settings.json` |
 | Cursor (グローバル) | `~/.cursor/mcp.json` |
 
 > **重要**: `--project` フラグは必須です。これがないと `uv` が正しい仮想環境を見つけられず `ModuleNotFoundError` が発生します。パスは必ず自分の環境の絶対パスに書き換えてください。
@@ -87,6 +89,9 @@ python register_mcp.py --cursor
 
 # Antigravity のみ登録
 python register_mcp.py --antigravity
+
+# Gemini CLI のみ登録
+python register_mcp.py --gemini
 
 # Claude Desktop のみ登録
 python register_mcp.py --claude

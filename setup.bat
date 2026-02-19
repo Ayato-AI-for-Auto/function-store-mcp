@@ -68,20 +68,58 @@ echo [INFO] Verifying installation...
 .venv\Scripts\python.exe -c "from llama_cpp import Llama; print('[OK] llama-cpp-python')"
 .venv\Scripts\python.exe -c "import duckdb; print('[OK] DuckDB')"
 
-:: 6. Register MCP Server (Cursor Global + Claude Desktop)
+:: 6. Register MCP Server (Interactive Selection)
 echo.
-echo [INFO] Registering MCP Server for AI clients...
-.venv\Scripts\python.exe register_mcp.py
-echo [OK] MCP registration complete.
+echo ============================================
+echo   MCP Server Registration
+echo ============================================
+echo.
+echo   Which AI client(s) should Function Store connect to?
+echo.
+echo     [1] Cursor
+echo     [2] Antigravity (Gemini)
+echo     [3] Claude Desktop
+echo     [4] Gemini CLI
+echo     [5] All of the above
+echo     [0] Skip (register later with register_mcp.py)
+echo.
+set /p CLIENT_CHOICE="  Enter your choice (0-5): "
 
+if "%CLIENT_CHOICE%"=="0" (
+    echo.
+    echo   [SKIP] MCP registration skipped.
+    echo   [INFO] Run  python register_mcp.py  later to register manually.
+    goto :setup_done
+)
+if "%CLIENT_CHOICE%"=="1" (
+    .venv\Scripts\python.exe register_mcp.py --cursor
+    goto :setup_done
+)
+if "%CLIENT_CHOICE%"=="2" (
+    .venv\Scripts\python.exe register_mcp.py --antigravity
+    goto :setup_done
+)
+if "%CLIENT_CHOICE%"=="3" (
+    .venv\Scripts\python.exe register_mcp.py --claude
+    goto :setup_done
+)
+if "%CLIENT_CHOICE%"=="4" (
+    .venv\Scripts\python.exe register_mcp.py --gemini
+    goto :setup_done
+)
+if "%CLIENT_CHOICE%"=="5" (
+    .venv\Scripts\python.exe register_mcp.py
+    goto :setup_done
+)
+
+echo   [ERROR] Invalid choice. Skipping registration.
+echo   [INFO]  Run  python register_mcp.py  later to register manually.
+
+:setup_done
 echo.
 echo ============================================
 echo   Setup Complete!
 echo ============================================
-echo.
-echo   - Cursor / Antigravity: Auto-registered (workspace config included)
-echo   - Claude Desktop:       Registered via register_mcp.py
-echo   - Cline:                See README.md for manual setup
 echo.
 echo   Next: Run FunctionStore.bat to launch the Dashboard.
 echo         AI agents can now use Function Store as an MCP server.
