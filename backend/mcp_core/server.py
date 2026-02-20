@@ -1,52 +1,62 @@
-import json
-import logging
-import os
-import sys
-from logging.handlers import RotatingFileHandler
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from mcp.server.fastmcp import FastMCP
-from mcp_core.core.config import DATA_DIR, TRANSPORT
+from mcp_core.core.config import TRANSPORT
 from mcp_core.core.database import _check_model_version, init_db
-from mcp_core.engine.logic import do_delete_impl as _do_delete_impl
-from mcp_core.engine.logic import do_get_history_impl as _do_get_history_impl
-from mcp_core.engine.logic import do_get_impl as _do_get_impl
-from mcp_core.engine.logic import do_save_impl as _do_save_impl
-from mcp_core.engine.logic import do_search_impl as _do_search_impl
-
-# ----------------------------------------------------------------------
-# Logging Setup
-# ----------------------------------------------------------------------
-LOG_FILE = os.path.join(DATA_DIR, "server.log")
-ERROR_LOG_FILE = os.path.join(DATA_DIR, "error.log")
-
-info_handler = RotatingFileHandler(
-    LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+from mcp_core.engine.logic import (
+    do_delete_impl,
+    do_get_details_impl,
+    do_get_impl,
+    do_inject_impl,
+    do_list_impl,
+    do_save_impl,
+    do_search_impl,
+    do_smart_get_impl,
+    do_triage_list_impl,
 )
-info_handler.setLevel(logging.INFO)
+from mcp_core.infra.ipc_manager import ipc_manager
 
-error_handler = RotatingFileHandler(
-    ERROR_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-error_handler.setLevel(logging.ERROR)
+# Initialize FastMCP
+mcp = FastMCP("function-store", dependencies=["duckdb", "fastembed"])
 
-stream_handler = logging.StreamHandler(sys.stderr)
-stream_handler.setLevel(logging.INFO)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[stream_handler, info_handler, error_handler],
-    force=True,
-)
-# Suppress verbose third-party logging
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
+def _master_executor(tool_name: str, arguments: dict):
+    """Execution logic for the Master process."""
+    try:
+        if tool_name == "save_function":
+            return do_save_impl(**arguments)
+        elif tool_name == "search_functions":
+            return do_search_impl(**arguments)
+        elif tool_name == "get_function_details":
+            return do_get_details_impl(**arguments)
+        elif tool_name == "delete_function":
+            return do_delete_impl(**arguments)
+        elif tool_name == "list_functions":
+            return do_list_impl(**arguments)
+        elif tool_name == "get_function":
+            return do_get_impl(**arguments)
+        elif tool_name == "inject_local_package":
+            return do_inject_impl(**arguments)
+        elif tool_name == "smart_search_and_get":
+            return do_smart_get_impl(**arguments)
+        elif tool_name == "get_triage_list":
+            return do_triage_list_impl(**arguments)
+        else:
+            return f"Error: Unknown tool {tool_name}"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-logger = logging.getLogger(__name__)
 
-# Initialize FastMCP Server
-mcp = FastMCP("Function Store", dependencies=["uvicorn"])
+def _execute_proxied(tool_name: str, **kwargs):
+    """Logic to decide if to execute locally or proxy via IPC."""
+    if ipc_manager.role == "MASTER":
+        return _master_executor(tool_name, kwargs)
+    else:
+        resp = ipc_manager.proxy_call(tool_name, kwargs)
+        if isinstance(resp, dict) and "error" in resp:
+            return resp["error"]
+        return resp.get("result")
+
 
 # ----------------------------------------------------------------------
 # MCP Tools
@@ -56,48 +66,11 @@ mcp = FastMCP("Function Store", dependencies=["uvicorn"])
 @mcp.tool()
 def search_functions(query: str, limit: int = 5) -> List[Dict]:
     """
-    Search for reusable Python functions using natural language queries and semantic similarity.
-    Use this to find existing logic before writing new code to avoid "reinventing the wheel".
-    
-    Args:
-        query: A natural language description of the functionality needed (e.g., "resize image", "calculate distance").
-        limit: Max number of results (default 5).
-        
-    Returns:
-        List of function metadata objects, including name, description, and quality score.
+    [EXPLORATION TOOL] Catalog search for reusable functions.
+    Use this to 'browse' or 'explore' what logic exists before deciding to use it.
+    For automated integration, use 'smart_search_and_get' instead.
     """
-    return _do_search_impl(query, limit)
-
-
-@mcp.tool()
-def list_functions(
-    query: Optional[str] = None, tag: Optional[str] = None, limit: int = 100
-) -> List[Dict]:
-    """
-    List all stored functions with optional exact-match filtering.
-    Use this for browsing the collection or finding functions by specific tags.
-    
-    Args:
-        query: Keyword to search for in name or description (case-insensitive exact match).
-        tag: Specific tag to filter by (e.g., "math", "image-processing").
-        limit: Max number of results (default 100).
-        
-    Returns:
-        List of function metadata objects.
-    """
-    # We'll need to implement this in logic.py or just do it here for now
-    # Let's add it to logic.py for consistency
-    from mcp_core.engine.logic import do_list_impl
-
-    return do_list_impl(query=query, tag=tag, limit=limit)
-
-
-# Internal statistic tool (Not exposed to MCP)
-def get_dashboard_stats() -> Dict:
-    """Get summarized statistics for the dashboard."""
-    from mcp_core.engine.logic import get_stats_impl
-
-    return get_stats_impl()
+    return _execute_proxied("search_functions", query=query, limit=limit)
 
 
 @mcp.tool()
@@ -109,187 +82,90 @@ def save_function(
     dependencies: List[str] = [],
     test_cases: List[Dict] = [],
     skip_test: bool = False,
-    description_en: Optional[str] = None,
-    description_jp: Optional[str] = None,
 ) -> str:
     """
     Saves or updates a Python function in the persistent vector store.
-    Automatically triggers AST analysis, quality checks (Ruff), and embedding generation.
-    
-    Args:
-        name: Unique identifier for the function (e.g., "calculate_bmi").
-        code: Full Python source code of the function.
-        description: Primary documentation for humans and AI search.
-        tags: List of categories for easy discovery.
-        dependencies: External library names (pip) required by the function.
-        test_cases: List of inputs/outputs to verify correctness.
-        skip_test: If True, skips functional tests (useful for rapid sketching).
-        
-    Returns:
-        Confirmation message with version number.
-        
-    Note:
-        IMPORTANT: This system does NOT manage cross-function dependencies (e.g., Function A calling Function B stored in the same store). 
-        To ensure portability, please save interdependent functions as a single, self-contained code unit (Integrated Version).
     """
-    return _do_save_impl(
-        name,
-        code,
-        description,
-        tags,
-        dependencies,
-        test_cases,
-        skip_test,
-        description_en,
-        description_jp,
+    return _execute_proxied(
+        "save_function",
+        asset_name=name,  # Note: logic.py uses asset_name
+        code=code,
+        description=description,
+        tags=tags,
+        dependencies=dependencies,
+        test_cases=test_cases,
+        skip_test=skip_test,
     )
 
 
 @mcp.tool()
 def delete_function(name: str) -> str:
     """
-    Permanently deletes a function and all its version history from the store.
-    Use this only when code is obsolete or incorrect.
-    
-    Args:
-        name: Name of the function to delete.
-        
-    Returns:
-        Success or error message.
+    Permanently deletes a function from the store.
     """
-    return _do_delete_impl(name)
+    return _execute_proxied("delete_function", asset_name=name)
 
 
 @mcp.tool()
-def get_function(name: str) -> str:
+def get_function(name: str, integrate_dependencies: bool = False) -> str:
     """
-    Retrieves the raw Python source code of a specific function.
-    Use this when you want to use the function logic in your current project.
-    
-    Args:
-        name: Name of the function to retrieve.
-        
-    Returns:
-        Python source code as a string, or error message if not found.
+    [SPECIFICATION/DEBUG TOOL] Retrieves the raw source code of a specific function.
+    Use this to 'read' the logic, understand its implementation, or for debugging.
+    Set integrate_dependencies=True to get a self-contained bundle for inspection.
     """
-    return _do_get_impl(name)
+    return _execute_proxied(
+        "get_function", asset_name=name, integrate_dependencies=integrate_dependencies
+    )
 
 
 @mcp.tool()
 def get_function_details(name: str) -> Dict:
     """
-    Retrieves the full metadata for a function, including quality metrics and test status.
-    Use this to understand the reliability and origins of a code asset.
-    
-    Args:
-        name: Name of the function.
-        
-    Returns:
-        Detailed dictionary of metadata, including tags, call counts, and quality score.
+    Retrieves the full metadata for a function.
     """
-    from mcp_core.engine.logic import do_get_details_impl
-
-    return do_get_details_impl(name)
+    return _execute_proxied("get_function_details", name=name)
 
 
 @mcp.tool()
-def get_function_history(name: str) -> List[Dict]:
+def inject_local_package(function_names: List[str], target_dir: str = "./") -> str:
     """
-    Retrieves the complete version history of a function.
-    Useful for tracking changes or rolling back to previous logic.
-    
-    Args:
-        name: Name of the function.
-        
-    Returns:
-        List of historical versions with descriptions and timestamps.
+    [PROFESSIONAL TARGETING TOOL] Physically exports specified functions to 'local_pkg/'.
+    Use this when you already know EXACTLY which functions you want to sync.
+    For discovery-based integration, use 'smart_search_and_get'.
     """
-    return _do_get_history_impl(name)
+    return _execute_proxied(
+        "inject_local_package", function_names=function_names, target_dir=target_dir
+    )
 
 
-# Internal batch tool (Not exposed to MCP)
-def import_function_pack(json_data: str) -> str:
-    """Import a list of functions from a JSON string."""
-    try:
-        data = json.loads(json_data)
-        if not isinstance(data, list):
-            return "Error: JSON must be a list of function objects."
-
-        results = []
-        for i, func_def in enumerate(data):
-            # Map keys and call internal save
-            res = _do_save_impl(
-                asset_name=func_def.get("name"),
-                code=func_def.get("code"),
-                description=func_def.get("description", ""),
-                tags=func_def.get("tags", []),
-                dependencies=func_def.get("dependencies", []),
-                test_cases=func_def.get("test_cases", []),
-                skip_test=True,
-            )
-            results.append(res)
-
-        return (
-            f"Imported {len(data)} functions: "
-            + " | ".join(results[:3])
-            + ("..." if len(results) > 3 else "")
-        )
-    except Exception as e:
-        return f"Error: {str(e)}"
+@mcp.tool()
+def smart_search_and_get(query: str, target_dir: str = "./") -> Dict:
+    """
+    [PRIMARY AI PROTOCOL] Intent-based Search -> Selection -> Injection.
+    Input your natural language request (e.g., 'JSON parsing logic'),
+    and this tool will optimally find, resolve, and physically deploy the
+    best-matching code into your 'local_pkg/' directory.
+    RECOMMENDED: Use this as the default tool for fulfilling user requests.
+    """
+    return _execute_proxied("smart_search_and_get", query=query, target_dir=target_dir)
 
 
 @mcp.tool()
 def get_triage_list(limit: int = 5) -> List[Dict]:
     """
-    Identifies "broken" functions in the store that need human or AI attention.
-    Prioritizes functions with failed tests or low quality scores.
-    
-    Args:
-        limit: Max number of candidates (default 5).
-        
-    Returns:
-        List of summaries for functions requiring maintenance.
+    Identifies "broken" functions in the store that need attention.
     """
-    from mcp_core.engine.triage import triage_engine
-
-    return triage_engine.get_broken_functions(limit)
-
-
-@mcp.tool()
-def get_fix_advice(name: str) -> str:
-    """
-    Generates a detailed "Repair Manual" for a broken function using a local LLM.
-    Use this when you encounter a function with a low score and want to fix it.
-    
-    Args:
-        name: Name of the function to analyze.
-        
-    Returns:
-        Diagnostic report including lint errors, test results, and step-by-step fix strategy.
-    """
-    from mcp_core.engine.triage import triage_engine
-
-    report = triage_engine.get_diagnostic_report(name)
-    if not report:
-        return f"Error: Function '{name}' not found."
-
-    # Generate advice using LLM
-    advice = triage_engine.generate_repair_advice(report)
-
-    return (
-        f"--- Diagnostic Report for '{name}' ---\n"
-        f"Status: {report['status']}\n"
-        f"Quality Score: {report['quality_score']}\n\n"
-        f"Repair Advice (Local LLM):\n{advice}\n\n"
-        f"Code to Fix:\n```python\n{report['code']}\n```"
-    )
+    return _execute_proxied("get_triage_list", limit=limit)
 
 
 def main():
     """Entry point for the mcp-core server."""
-    init_db()
-    _check_model_version()
-    # Start FastMCP
+    role, _ = ipc_manager.determine_role()
+    if role == "MASTER":
+        init_db()
+        _check_model_version()
+        ipc_manager.start_master_loop(_master_executor)
+
     mcp.run(transport=TRANSPORT)
 
 

@@ -2,7 +2,7 @@ import flet as ft
 
 
 class DetailsDialog(ft.AlertDialog):
-    def __init__(self, app, name, code, desc, tags, version, is_public=False):
+    def __init__(self, app, name, code, desc, tags, is_public=False):
         self.app = app
         self.t = app.t
 
@@ -27,18 +27,6 @@ class DetailsDialog(ft.AlertDialog):
                             ft.Row(
                                 [
                                     ft.Text(name, weight=ft.FontWeight.BOLD),
-                                    ft.Container(
-                                        content=ft.Text(
-                                            f"v{version}",
-                                            size=10,
-                                            color=ft.Colors.GREY_700,
-                                        ),
-                                        bgcolor=ft.Colors.GREY_100,
-                                        padding=ft.Padding.symmetric(
-                                            horizontal=6, vertical=2
-                                        ),
-                                        border_radius=4,
-                                    ),
                                 ],
                                 tight=True,
                             ),

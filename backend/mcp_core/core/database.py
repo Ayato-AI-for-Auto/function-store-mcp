@@ -1,18 +1,86 @@
 import json
 import logging
 import os  # Added import for os module
+import time
 
 import duckdb
 from mcp_core.core import config
 from mcp_core.engine.embedding import embedding_service
 
+try:
+    import msvcrt
+
+    _HAS_MSVCRT = True
+except ImportError:
+    _HAS_MSVCRT = False
+
+import threading
+
 logger = logging.getLogger(__name__)
+
+LOCK_PATH = config.DATA_DIR / "functions.duckdb.lock"
+
+# Thread lock to prevent intra-process contention before it hits the file system
+_inner_lock = threading.Lock()
+
+
+class DBWriteLock:
+    """Cross-process file lock for DuckDB write operations on Windows."""
+
+    def __init__(self, timeout: float = 10.0):
+        self.timeout = timeout
+        self._fp = None
+
+    def __enter__(self):
+        # logger.debug(f"DEBUG: Thread {threading.get_ident()} trying to acquire L-Lock")
+        if not _inner_lock.acquire(timeout=self.timeout):
+            logger.error(f"DEBUG: Thread {threading.get_ident()} TIMEOUT on L-Lock")
+            raise TimeoutError("Could not acquire internal thread lock.")
+
+        if not _HAS_MSVCRT:
+            return self
+
+        try:
+            LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+            self._fp = open(LOCK_PATH, "a")
+
+            deadline = time.monotonic() + self.timeout
+            while True:
+                try:
+                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
+                    # logger.debug(f"DEBUG: Thread {threading.get_ident()} acquired F-Lock")
+                    return self
+                except OSError:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(
+                            "Could not acquire database lock. Another process (Cursor/Antigravity) "
+                            "might be writing to Function Store. Please try again in a few seconds."
+                        )
+                    time.sleep(0.1)
+        except Exception as e:
+            _inner_lock.release()
+            if isinstance(e, TimeoutError):
+                raise
+            raise RuntimeError(f"Lock initialization failed: {e}")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if self._fp:
+                try:
+                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
+                    # logger.debug(f"DEBUG: Thread {threading.get_ident()} released F-Lock")
+                except Exception:
+                    pass
+                finally:
+                    self._fp.close()
+                    self._fp = None
+        finally:
+            _inner_lock.release()
+            # logger.debug(f"DEBUG: Thread {threading.get_ident()} released L-Lock")
 
 
 def get_db_connection(read_only=False):
     """Gets a connection to the DuckDB database with retry logic for Windows lock contention."""
-    import time
-
     max_retries = 10
     retry_delay = 0.2  # seconds
 
@@ -24,13 +92,11 @@ def get_db_connection(read_only=False):
             if db_path != ":memory:":
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-            # DuckDB allows multiple connections to the same file in the SAME process
-            # if they share the same configuration. We use defaults.
             conn = duckdb.connect(db_path, read_only=read_only)
+
             return conn
         except (duckdb.IOException, duckdb.Error) as e:
             last_err = e
-            # Windows sharing violation or DuckDB lock
             msg = str(e).lower()
             if (
                 "process cannot access the file" in msg
@@ -47,154 +113,85 @@ def get_db_connection(read_only=False):
 
 
 def init_db():
-    conn = get_db_connection()
-    try:
-        # Create Sequence for ID
-        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_function_id START 1")
-        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_version_id START 1")
-        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_emb_id START 1")
+    with DBWriteLock():
+        conn = get_db_connection()
+        try:
+            # Create Sequence for ID
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_function_id START 1")
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_emb_id START 1")
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS functions (
-                id INTEGER PRIMARY KEY DEFAULT nextval('seq_function_id'),
-                name VARCHAR,
-                code VARCHAR,
-                description VARCHAR,
-                description_en VARCHAR,
-                description_jp VARCHAR,
-                tags VARCHAR,
-                metadata VARCHAR,
-                status VARCHAR DEFAULT 'active',
-                test_cases VARCHAR,
-                call_count INTEGER DEFAULT 0,
-                last_called_at VARCHAR,
-                created_at VARCHAR,
-                updated_at VARCHAR
-            )
-        """)
-
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_functions_name ON functions (name)"
-        )
-
-        # Removing FOREIGN KEY constraints to avoid DuckDB ConstraintException clashing in transactions.
-        # Integrity is managed at the application level in logic.py.
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS embeddings (
-                id INTEGER PRIMARY KEY DEFAULT nextval('seq_emb_id'),
-                function_id INTEGER,
-                vector FLOAT[],
-                model_name VARCHAR
-            )
-        """)
-
-        # Version History Table (Removed FK for robust deletion)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS function_versions (
-                id INTEGER PRIMARY KEY DEFAULT nextval('seq_version_id'),
-                function_id INTEGER,
-                version INTEGER,
-                code VARCHAR,
-                dependencies VARCHAR,
-                test_cases VARCHAR,
-                description VARCHAR,
-                description_en VARCHAR,
-                description_jp VARCHAR,
-                archived_at VARCHAR
-            )
-        """)
-
-        # Config Table for Model Versioning
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                key VARCHAR PRIMARY KEY,
-                value VARCHAR
-            )
-        """)
-
-        # Migrations
-        columns_res = conn.execute("DESCRIBE functions").fetchall()
-        columns = [row[0] for row in columns_res]
-
-        needed_cols = {
-            "metadata": "NULL",
-            "status": "'active'",
-            "test_cases": "NULL",
-            "version": "'1'",
-            "description_en": "NULL",
-            "description_jp": "NULL",
-            "call_count": "0",
-            "last_called_at": "NULL",
-        }
-
-        for col, default_val in needed_cols.items():
-            if col not in columns:
-                logger.info(f"Migrating DB: Adding '{col}' column.")
-                type_map = {"call_count": "INTEGER", "version": "INTEGER"}
-                col_type = type_map.get(col, "VARCHAR")
-                conn.execute(f"ALTER TABLE functions ADD COLUMN {col} {col_type}")
-                conn.execute(
-                    f"UPDATE functions SET {col} = {default_val} WHERE {col} IS NULL"
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS functions (
+                    id INTEGER PRIMARY KEY DEFAULT nextval('seq_function_id'),
+                    name VARCHAR,
+                    code VARCHAR,
+                    description VARCHAR,
+                    tags VARCHAR,
+                    metadata VARCHAR,
+                    status VARCHAR DEFAULT 'active',
+                    test_cases VARCHAR,
+                    call_count INTEGER DEFAULT 0,
+                    last_called_at VARCHAR,
+                    created_at VARCHAR,
+                    updated_at VARCHAR
                 )
+            """)
 
-        # Migrations for embeddings table
-        emb_cols_res = conn.execute("DESCRIBE embeddings").fetchall()
-        emb_cols = [row[0] for row in emb_cols_res]
-        if "model_name" not in emb_cols:
-            logger.info("Migrating DB: Adding 'model_name' column to embeddings table.")
-            conn.execute("ALTER TABLE embeddings ADD COLUMN model_name VARCHAR")
-        if "dimension" not in emb_cols:
-            logger.info("Migrating DB: Adding 'dimension' column to embeddings table.")
-            conn.execute("ALTER TABLE embeddings ADD COLUMN dimension INTEGER")
-        if "encoded_at" not in emb_cols:
-            logger.info("Migrating DB: Adding 'encoded_at' column to embeddings table.")
-            conn.execute("ALTER TABLE embeddings ADD COLUMN encoded_at VARCHAR")
-
-            # Automatic Migration: Re-calculate embeddings for legacy records using CURRENT model
-            logger.info(
-                f"Migrating DB: Re-calculating legacy embeddings using current model '{config.EMBEDDING_MODEL_ID}'..."
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_functions_name ON functions (name)"
             )
 
-            legacy_rows = conn.execute("""
-                SELECT f.id, f.name, f.description, f.tags, f.metadata, f.code 
-                FROM functions f 
-                JOIN embeddings e ON f.id = e.function_id 
-                WHERE e.model_name IS NULL
-            """).fetchall()
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS embeddings (
+                    id INTEGER PRIMARY KEY DEFAULT nextval('seq_emb_id'),
+                    function_id INTEGER,
+                    vector FLOAT[],
+                    model_name VARCHAR,
+                    dimension INTEGER,
+                    encoded_at VARCHAR
+                )
+            """)
 
-            count = 0
-            for row in legacy_rows:
-                fid, name, desc, tags_json, meta_json, code = row
-                tags = json.loads(tags_json) if tags_json else []
-                meta = json.loads(meta_json) if meta_json else {}
-                deps = meta.get("dependencies", [])
+            # Config Table for Model Versioning
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS config (
+                    key VARCHAR PRIMARY KEY,
+                    value VARCHAR
+                )
+            """)
 
-                text_to_embed = f"Function Name: {name}\nDescription: {desc}\nTags: {', '.join(tags)}\nDependencies: {', '.join(deps)}\nCode:\n{code[:1000]}"
+            # Migrations
+            columns_res = conn.execute("DESCRIBE functions").fetchall()
+            columns = [row[0] for row in columns_res]
 
-                try:
-                    embedding = embedding_service.get_embedding(text_to_embed)
-                    vector_list = embedding.tolist()
+            needed_cols = {
+                "metadata": "NULL",
+                "status": "'active'",
+                "test_cases": "NULL",
+                "call_count": "0",
+                "last_called_at": "NULL",
+            }
 
+            for col, default_val in needed_cols.items():
+                if col not in columns:
+                    logger.info(f"Migrating DB: Adding '{col}' column.")
+                    type_map = {"call_count": "INTEGER"}
+                    col_type = type_map.get(col, "VARCHAR")
+                    conn.execute(f"ALTER TABLE functions ADD COLUMN {col} {col_type}")
                     conn.execute(
-                        "UPDATE embeddings SET vector = ?, model_name = ?, dimension = ?, encoded_at = CURRENT_TIMESTAMP WHERE function_id = ?",
-                        (vector_list, config.EMBEDDING_MODEL_ID, len(vector_list), fid),
+                        f"UPDATE functions SET {col} = {default_val} WHERE {col} IS NULL"
                     )
-                    count += 1
-                except Exception as e:
-                    logger.error(f"Failed to re-embed '{name}' during migration: {e}")
 
-            logger.info(f"Migration Complete: Re-embedded {count} functions.")
+            # No need to open new connections inside these helpers
+            _check_model_version_internal(conn)
+            recover_embeddings_internal(conn)
 
-        # Check for model/dimension mismatch and recover
-        recover_embeddings()
-
-    finally:
-        conn.close()
+        finally:
+            conn.close()
 
 
-def recover_embeddings():
+def recover_embeddings_internal(conn):
     """Checks for model or dimension mismatch and re-calculates embeddings if necessary."""
-    conn = get_db_connection()
     try:
         current_model = embedding_service.model_name
         expected_dim = embedding_service.get_model_info()["dimension"]
@@ -245,22 +242,17 @@ def recover_embeddings():
 
     except Exception as e:
         logger.error(f"Error during embedding recovery: {e}")
-    finally:
-        conn.close()
 
 
-def _check_model_version():
+def _check_model_version_internal(conn):
     """Checks if the current model version matches the database version, triggers migration if not."""
-    conn = get_db_connection()
     try:
-        # Get stored model version
         row = conn.execute(
             "SELECT value FROM config WHERE key = 'embedding_model'"
         ).fetchone()
         current_model = embedding_service.model_name
 
         if not row:
-            # First run or direct migration
             conn.execute(
                 "INSERT INTO config (key, value) VALUES ('embedding_model', ?)",
                 (current_model,),
@@ -273,8 +265,6 @@ def _check_model_version():
             logger.warning(
                 f"Embedding model changed from '{stored_model}' to '{current_model}'. Migrating..."
             )
-            # Here we would trigger a full re-embedding if needed, but for now we just update config
-            # and let the init_db migration handle NULL model_name entries.
             conn.execute(
                 "UPDATE config SET value = ? WHERE key = 'embedding_model'",
                 (current_model,),
@@ -282,5 +272,22 @@ def _check_model_version():
             conn.commit()
     except Exception as e:
         logger.error(f"Error checking model version: {e}")
-    finally:
-        conn.close()
+
+
+# Public wrappers if needed
+def recover_embeddings():
+    with DBWriteLock():
+        conn = get_db_connection()
+        try:
+            recover_embeddings_internal(conn)
+        finally:
+            conn.close()
+
+
+def _check_model_version():
+    with DBWriteLock():
+        conn = get_db_connection()
+        try:
+            _check_model_version_internal(conn)
+        finally:
+            conn.close()

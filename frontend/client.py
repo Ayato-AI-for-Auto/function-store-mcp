@@ -16,8 +16,16 @@ class SoloClient:
     """
 
     def __init__(self, python_exe: str, server_script: str):
-        self.python_exe = python_exe
-        self.server_script = server_script
+        if getattr(sys, "frozen", False):
+            # In frozen state, the current executable is the server
+            self.python_exe = sys.executable
+            self.server_script = "--server"
+            self.is_frozen = True
+        else:
+            self.python_exe = python_exe
+            self.server_script = server_script
+            self.is_frozen = False
+
         self.process = None
         self.msg_id = 0
         self.pending_requests = {}
@@ -27,6 +35,7 @@ class SoloClient:
     def start(self):
         """Starts the MCP server as a subprocess."""
         cmd = [self.python_exe, self.server_script]
+
         self.process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -41,7 +50,7 @@ class SoloClient:
         # Wait for initialize or just assume ready after a bit
         time.sleep(1)
         self._is_ready = True
-        logger.info("MCP Server started and client initialized.")
+        logger.info(f"MCP Server started (Frozen: {self.is_frozen}).")
 
     def stop(self):
         if self.process:
@@ -50,6 +59,9 @@ class SoloClient:
 
     def _read_loop(self):
         """Continuously read JSON-RPC responses from the server's stdout."""
+        if not self.process:
+            return
+
         for line in iter(self.process.stdout.readline, ""):
             if not line:
                 break
@@ -66,7 +78,8 @@ class SoloClient:
     def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Call an MCP tool via JSON-RPC."""
         if not self.process or not self._is_ready:
-            raise RuntimeError("MCP Client is not started or ready.")
+            # Try to auto-start if not running
+            self.start()
 
         self.msg_id += 1
         req_id = self.msg_id
@@ -113,22 +126,24 @@ class SoloClient:
     def list_functions(
         self, query: Optional[str] = None, tag: Optional[str] = None
     ) -> List[Dict]:
-        return self._call_tool("list_functions", {"query": query, "tag": tag})
+        return self._call_tool("list_functions", {"query": query, "tag": tag}) or []
 
     def get_stats(self) -> Dict:
-        return self._call_tool("get_dashboard_stats", {})
+        return self._call_tool("get_dashboard_stats", {}) or {}
 
     def save_function(self, **kwargs) -> str:
-        return self._call_tool("save_function", kwargs)
+        return (
+            self._call_tool("save_function", kwargs) or "Error: No response from server"
+        )
 
     def delete_function(self, name: str) -> str:
-        return self._call_tool("delete_function", {"name": name})
+        return (
+            self._call_tool("delete_function", {"name": name})
+            or "Error: No response from server"
+        )
 
     def get_function_details(self, name: str) -> Optional[Dict]:
         res = self._call_tool("get_function_details", {"name": name})
-        if res and "error" in res:
+        if res and isinstance(res, dict) and "error" in res:
             return None
         return res
-
-    def sync_all(self):
-        return self._call_tool("sync_now", {})

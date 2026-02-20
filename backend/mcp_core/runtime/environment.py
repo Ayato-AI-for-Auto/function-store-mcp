@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
-from mcp_core.core.config import ENVS_DIR
+from mcp_core.core.config import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -151,24 +151,22 @@ class EnvManager:
             return "", f"Env Creation Error: {str(e)}"
 
     def capture_freeze(self, python_exe: str) -> List[str]:
-        """Runs pip freeze in the specified environment to capture exact versions."""
+        """Runs uv pip freeze in the specified environment to capture exact versions."""
         try:
-            # Determine pip location based on python_exe
-            pip_exe = Path(python_exe).parent / (
-                "pip.exe" if os.name == "nt" else "pip"
-            )
-            logger.info(f"EnvManager: Running capture_freeze using {pip_exe}")
-            if not pip_exe.exists():
-                logger.warning(f"EnvManager: pip_exe {pip_exe} not found!")
-                return []
-
+            logger.info(f"EnvManager: Running capture_freeze using {python_exe}")
+            # Use uv pip freeze for better performance and consistency
             result = subprocess.run(
-                [str(pip_exe), "freeze"], capture_output=True, text=True, check=True
+                ["uv", "pip", "freeze", "--python", python_exe],
+                capture_output=True,
+                text=True,
+                check=True,
             )
             output = [
                 line.strip() for line in result.stdout.splitlines() if line.strip()
             ]
-            logger.info(f"EnvManager: Captured {len(output)} packages via freeze.")
+            logger.info(
+                f"EnvManager: Captured {len(output)} packages via uv pip freeze."
+            )
             return output
         except Exception as e:
             logger.error(f"EnvManager: Failed to capture freeze: {e}")
@@ -177,4 +175,6 @@ class EnvManager:
 
 # Docker remains removed in runtime consolidation phase.
 
-env_manager = EnvManager(ENVS_DIR)
+_envs_dir = DATA_DIR / ".mcp_envs"
+_envs_dir.mkdir(parents=True, exist_ok=True)
+env_manager = EnvManager(_envs_dir)

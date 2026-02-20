@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,6 @@ class DataSanitizer:
         code: str,
         description: str,
         tags: List[str],
-        desc_en: Optional[str] = None,
-        desc_jp: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Batch sanitize all registration fields."""
         # Clean each field, then filter out empty tags specifically
@@ -90,6 +88,4 @@ class DataSanitizer:
             "code": cls.clean_code(code),
             "description": cls.clean_text(description),
             "tags": cleaned_tags,
-            "description_en": cls.clean_text(desc_en) if desc_en else None,
-            "description_jp": cls.clean_text(desc_jp) if desc_jp else None,
         }

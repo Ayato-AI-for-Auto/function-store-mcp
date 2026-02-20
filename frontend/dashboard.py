@@ -4,7 +4,13 @@ import threading
 from pathlib import Path
 
 import flet as ft
+from google import genai
 from mcp_core.config import BASE_DIR, DATA_DIR, DB_PATH, SETTINGS_PATH
+from mcp_core.core.mcp_manager import (
+    get_registration_status,
+    register_with_client,
+)
+from mcp_core.engine.sync_engine import sync_engine
 
 from frontend.client import SoloClient
 from frontend.components.details_dialog import DetailsDialog
@@ -73,7 +79,7 @@ class SoloDashboardApp:
         threading.Thread(target=self._safe_bg_sync, daemon=True).start()
 
     def _safe_bg_sync(self):
-        """Thread-safe background sync to handle both pushing local changes and pulling cloud updates."""
+        """Thread-safe background sync via direct function call."""
         if self.is_syncing:
             return
 
@@ -81,9 +87,11 @@ class SoloDashboardApp:
         self.log("Background Sync: Initializing...", ft.Colors.GREY_500)
 
         try:
-            # All sync/pull operations now happen via the server process
-            self.client.sync_all()
-            self.log("Background Sync: Complete!", ft.Colors.GREEN_400)
+            count = sync_engine.pull()
+            self.log(
+                f"Background Sync: Complete! Updated {count} functions.",
+                ft.Colors.GREEN_400,
+            )
             self.load_functions()
         except Exception as e:
             self.log(f"Sync Error: {e}", ft.Colors.RED_400)
@@ -418,7 +426,6 @@ class SoloDashboardApp:
                     public_data.get("code") or "# No source code available in preview"
                 )
                 desc = public_data.get("description") or self.t["no_description"]
-                ver = public_data.get("version", "1.0")
                 tags_json = public_data.get("tags")
                 tag_list = (
                     tags_json
@@ -446,7 +453,6 @@ class SoloDashboardApp:
                 # We might need more fields from the client, for now let's assume it's basically the same
                 desc = func_data.get("description", "")
                 tag_list = func_data.get("tags", [])
-                ver = func_data.get("version", "1")
                 is_public = False
 
             # Use the new DetailsDialog component
@@ -456,7 +462,6 @@ class SoloDashboardApp:
                 code=code,
                 desc=desc,
                 tags=tag_list,
-                version=ver,
                 is_public=is_public,
             )
 
@@ -627,8 +632,11 @@ class SoloDashboardApp:
 
     def handle_sync(self, e):
         self.log("Syncing...", ft.Colors.BLUE_400)
-        self.client.sync_all()
-        self.log("Sync request sent!", ft.Colors.GREEN_400)
+        try:
+            count = sync_engine.pull()
+            self.log(f"Sync complete! Updated {count} functions.", ft.Colors.GREEN_400)
+        except Exception as ex:
+            self.log(f"Sync Error: {ex}", ft.Colors.RED_400)
 
     # --- Settings ---
     def load_settings(self):
@@ -636,27 +644,28 @@ class SoloDashboardApp:
             with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
                 s = json.load(f)
                 self.settings_view.model_dropdown.value = s.get(
-                    "FS_MODEL_NAME", "models/gemini-embedding-001"
+                    "FS_MODEL_NAME",
+                    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
                 )
-                self.settings_view.quality_gate_model_dropdown.value = s.get(
-                    "FS_QUALITY_GATE_MODEL", "gemma-3-27b-it"
+                self.settings_view.gemini_api_key_field.value = s.get(
+                    "FS_GEMINI_API_KEY", ""
                 )
-                self.settings_view.api_key_field.value = s.get("GOOGLE_API_KEY", "")
                 self.lang = s.get("UI_LANG", "en")
+
                 self.settings_view.lang_dropdown.value = self.lang
                 self.t = self.localization_data.get(
                     self.lang, self.localization_data["en"]
                 )
                 self.switch_language(None)
-        self.refresh_mcp_config(None)
+        self.refresh_registration_status()
 
     def save_settings_to_file(self, e):
         s = {
             "FS_MODEL_NAME": self.settings_view.model_dropdown.value,
-            "FS_QUALITY_GATE_MODEL": self.settings_view.quality_gate_model_dropdown.value,
-            "GOOGLE_API_KEY": self.settings_view.api_key_field.value,
+            "FS_GEMINI_API_KEY": self.settings_view.gemini_api_key_field.value,
             "UI_LANG": self.settings_view.lang_dropdown.value,
         }
+
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(s, f, indent=2)
         self.page.snack_bar = ft.SnackBar(
@@ -665,25 +674,84 @@ class SoloDashboardApp:
         self.page.snack_bar.open = True
         self.page.update()
 
-    def copy_mcp_config(self, e):
-        self.page.set_clipboard(self.settings_view.mcp_config_box.value)
+    def verify_gemini_key(self, e):
+        api_key = self.settings_view.gemini_api_key_field.value.strip()
+        if not api_key:
+            return
+
+        self.log("Verifying Gemini API Key...", ft.Colors.BLUE_400)
+        self.settings_view.verify_btn.disabled = True
+        self.page.update()
+
+        def _verify():
+            try:
+                client = genai.Client(api_key=api_key)
+                # Try to list models as a connection test
+                client.models.list()
+
+                self.page.run_task(self._verify_success)
+            except Exception as ex:
+                self.log(f"Verification Failed: {ex}", ft.Colors.RED_400)
+                self.page.run_task(self._verify_failure)
+
+        threading.Thread(target=_verify, daemon=True).start()
+
+    async def _verify_success(self, _=None):
+        self.settings_view.verify_btn.disabled = False
+        self.settings_view.verify_btn.icon = ft.Icons.CHECK_CIRCLE
+        self.settings_view.verify_btn.color = ft.Colors.GREEN_600
+        self.log(self.t["api_key_valid"], ft.Colors.GREEN_400)
         self.page.snack_bar = ft.SnackBar(
-            ft.Text("Copied!"), bgcolor=ft.Colors.GREEN_600
+            ft.Text(self.t["api_key_valid"]), bgcolor=ft.Colors.GREEN_600
         )
         self.page.snack_bar.open = True
         self.page.update()
 
-    def refresh_mcp_config(self, e):
-        config = {
-            "mcpServers": {
-                "function-store": {
-                    "command": "uv",
-                    "args": ["run", "mcp-core"],
-                }
-            }
-        }
-        self.settings_view.mcp_config_box.value = json.dumps(config, indent=2)
-        self.settings_view.update()
+    async def _verify_failure(self, _=None):
+        self.settings_view.verify_btn.disabled = False
+        self.settings_view.verify_btn.icon = ft.Icons.ERROR_OUTLINE
+        self.settings_view.verify_btn.color = ft.Colors.RED_600
+        self.page.snack_bar = ft.SnackBar(
+            ft.Text(self.t["api_key_invalid"]), bgcolor=ft.Colors.RED_600
+        )
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def handle_registration(self, client_name: str):
+
+        self.log(f"Registering with {client_name}...", ft.Colors.BLUE_400)
+        try:
+            res = register_with_client(client_name)
+            if "SUCCESS" in res:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Successfully registered with {client_name}!"),
+                    bgcolor=ft.Colors.GREEN_600,
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Registration failed: {res}"), bgcolor=ft.Colors.RED_600
+                )
+            self.page.snack_bar.open = True
+            self.page.update()
+            self.refresh_registration_status()
+        except Exception as e:
+            self.log(f"Registration Error: {e}", ft.Colors.RED_400)
+
+    def refresh_registration_status(self):
+        try:
+            status = get_registration_status()
+            self.settings_view.cursor_btn.style.bgcolor = (
+                ft.Colors.GREEN_100 if status.get("cursor") else ft.Colors.BLUE_50
+            )
+            self.settings_view.claude_btn.style.bgcolor = (
+                ft.Colors.GREEN_100 if status.get("claude") else ft.Colors.BLUE_50
+            )
+            self.settings_view.antigravity_btn.style.bgcolor = (
+                ft.Colors.GREEN_100 if status.get("antigravity") else ft.Colors.BLUE_50
+            )
+            self.settings_view.update()
+        except Exception:
+            pass
 
     def load_search_history(self):
         if self.search_history_path.exists():

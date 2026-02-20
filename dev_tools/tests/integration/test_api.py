@@ -65,5 +65,5 @@ def test_save_and_run_flow():
 
 def test_auth_failure():
     """Test that requests without API key are rejected."""
-    response = client.get("/functions/any/history")
+    response = client.get("/functions/stats")
     assert response.status_code == 401

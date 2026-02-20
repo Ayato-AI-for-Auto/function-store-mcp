@@ -41,7 +41,7 @@ def run_command(cmd, name):
 def main():
     setup_logging()
     try:
-        parser = argparse.ArgumentParser(description="Horiemon-approved Developer Tool")
+        parser = argparse.ArgumentParser(description="Developer Tool")
         parser.add_argument("--test-only", action="store_true", help="Run only tests")
         parser.add_argument("--lint-only", action="store_true", help="Run only lint")
         parser.add_argument("--ship", action="store_true", help="CI + git push")
@@ -53,6 +53,13 @@ def main():
             "--publish-all",
             action="store_true",
             help="Publish ALL functions to the Hub",
+        )
+        parser.add_argument(
+            "--release",
+            type=str,
+            nargs="?",
+            const="auto",
+            help="Ship a new version (CI + Tag + Push). Specify version or uses VERSION file.",
         )
         args = parser.parse_args()
 
@@ -106,6 +113,37 @@ def main():
                 if run_command("git add -A", "Git Add"):
                     if run_command(f'git commit -m "{msg}"', "Git Commit"):
                         run_command("git push origin main", "Git Push")
+
+            if args.release:
+                # 1. Determine version
+                version = args.release
+                if version == "auto":
+                    version_file = os.path.join(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "VERSION",
+                    )
+                    if os.path.exists(version_file):
+                        with open(version_file, "r") as f:
+                            version = f.read().strip()
+                    else:
+                        print("[ERROR] VERSION file not found for --release auto.")
+                        sys.exit(1)
+
+                tag = f"v{version}"
+                print(f"\n[INFO] Releasing version: {tag}...")
+
+                # 2. Tag and Push
+                if run_command(
+                    f'git tag -a {tag} -m "Release {tag}"', f"Git Tag {tag}"
+                ):
+                    if run_command(f"git push origin {tag}", "Git Push Tag"):
+                        print(
+                            f"\n[SUCCESS] Release {tag} triggered! Check GitHub Actions for build status."
+                        )
+                    else:
+                        print(f"[ERROR] Failed to push tag {tag}.")
+                else:
+                    print(f"[ERROR] Failed to create tag {tag}. Does it already exist?")
         else:
             print("\n" + "!" * 40)
             print("  SOME TASKS FAILED. FIX THEM.  ")
@@ -123,7 +161,7 @@ def clean_garbage():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     count = 0
     error_count = 0
-    print(f"\n[INFO] Horiemon Cleanup: Scanning {root_dir}...")
+    print(f"\n[INFO] Cleanup: Scanning {root_dir}...")
 
     for filename in os.listdir(root_dir):
         if filename.endswith(".txt") or filename.endswith(".log"):

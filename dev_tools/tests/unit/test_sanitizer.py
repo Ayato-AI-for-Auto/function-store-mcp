@@ -34,14 +34,10 @@ def test_sanitize_batch():
         code="print('Hi 🌟')",
         description="Cool 💎 tool",
         tags=["ai", "🚀"],
-        desc_en="English 🇺🇸",
-        desc_jp="日本語 🇯🇵",
     )
     assert data["name"] == "test_func"
     assert data["tags"] == ["ai"]
     assert "🚀" not in data["description"]
-    assert "🇺🇸" not in data["description_en"]
-    assert "🇯🇵" not in data["description_jp"]
 
 
 def test_empty_inputs():

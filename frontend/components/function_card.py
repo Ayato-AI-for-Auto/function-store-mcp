@@ -11,18 +11,8 @@ class FunctionCard(ft.Container):
 
         name = r.get("name")
         status = r.get("status")
-        ver = r.get("version")
-        desc = r.get("description")
-        desc_en = r.get("description_en")
-        desc_jp = r.get("description_jp")
+        display_desc = r.get("description")
         calls = r.get("call_count")
-
-        # Localization
-        display_desc = desc
-        if app.lang == "jp":
-            display_desc = desc_jp or desc
-        elif app.lang == "en":
-            display_desc = desc_en or desc
 
         status_color = ft.Colors.BLUE_400
         if status == "verified":
@@ -50,16 +40,6 @@ class FunctionCard(ft.Container):
                                     ),
                                     ft.Text(
                                         f"{name}", weight=ft.FontWeight.BOLD, size=16
-                                    ),
-                                    ft.Container(
-                                        content=ft.Text(
-                                            f"v{ver}", size=10, color=ft.Colors.GREY_700
-                                        ),
-                                        bgcolor=ft.Colors.GREY_100,
-                                        padding=ft.Padding.symmetric(
-                                            horizontal=6, vertical=2
-                                        ),
-                                        border_radius=4,
                                     ),
                                 ],
                                 spacing=10,

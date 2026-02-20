@@ -48,7 +48,7 @@ class BadClass:
         return "hello"
 """
     # Force check
-    report = qgate.check_score_only("BadClass", bad_class_code, "desc", "desc")
+    report = qgate.check_score_only("BadClass", bad_class_code, "desc")
 
     assert report["final_score"] < 100
     # Check if linter caught the unused import/variable

@@ -127,8 +127,54 @@ def main():
         action(client, path)
 
     if not args.unregister:
+        _update_agent_instructions()
         print("\n  Note: Cursor/Antigravity workspace configs are auto-registered via")
         print("        .cursor/mcp.json and .vscode/mcp.json (included in repo).\n")
+
+
+def _update_agent_instructions():
+    """Inject FunctionStore specific instructions into standard agent instruction files."""
+    home = Path.home()
+    gemini_md = home / ".gemini" / "GEMINI.md"
+
+    if not gemini_md.exists():
+        return
+
+    marker_start = "<!-- FUNCTION_STORE_INSTRUCTIONS_START -->"
+    marker_end = "<!-- FUNCTION_STORE_INSTRUCTIONS_END -->"
+
+    instruction_block = f"""
+{marker_start}
+## [FunctionStore] AI Agent Guidelines
+- **MCPサーバ「FunctionStore」を積極的に活用してください。**
+    - 既存の関数を検索し、無ければ新規保存することで資産の再利用性を高めてください。
+    - **Draft-First思想**: 構文エラーや説明不足の状態でも積極的に保存（下書き）し、後の工程でAI（あなたや他のツール）がそれを取り出して磨き上げるワークフローを徹底してください。
+    - プログラミング作業時は `smart_search_and_get` を最初の接点として検討してください。
+{marker_end}
+"""
+
+    try:
+        content = gemini_md.read_text(encoding="utf-8")
+
+        if marker_start in content and marker_end in content:
+            # Idempotent update: Replace existing block
+            import re
+
+            pattern = re.escape(marker_start) + ".*?" + re.escape(marker_end)
+            new_content = re.sub(
+                pattern, instruction_block.strip(), content, flags=re.DOTALL
+            )
+            if new_content != content:
+                gemini_md.write_text(new_content, encoding="utf-8")
+                print(f"  [OK] Instructions: Updated in {gemini_md}")
+        else:
+            # Append if not present
+            new_content = content.rstrip() + "\n\n" + instruction_block.strip() + "\n"
+            gemini_md.write_text(new_content, encoding="utf-8")
+            print(f"  [OK] Instructions: Injected into {gemini_md}")
+
+    except Exception as e:
+        print(f"  [--] Instructions: Failed to update {gemini_md}: {e}")
 
 
 if __name__ == "__main__":

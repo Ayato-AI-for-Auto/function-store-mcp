@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from typing import Any, Dict, List, Tuple
 
+from .security_audit import SecurityAuditService
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,9 +121,14 @@ class RuffProcessor:
 class QualityGate:
     def __init__(self):
         self.processor = RuffProcessor()
+        self.security_auditor = SecurityAuditService()
 
     def check_score_only(
-        self, name: str, code: str, desc_en: str, desc_jp: str
+        self,
+        name: str,
+        code: str,
+        description: str = "",
+        dependencies: List[str] = None,
     ) -> Dict[str, Any]:
         """
         Ultra-fast quality check using ONLY Ruff.
@@ -150,7 +157,16 @@ class QualityGate:
         report["formatter"] = {"passed": f_pass, "feedback": f_msg}
         formatter_penalty = 0 if f_pass else 30
 
-        final_score = max(0, 100 - linter_penalty - formatter_penalty)
+        # 3. Security Audit (New Phase 6)
+        s_bandit = self.security_auditor.run_bandit(code)
+        s_safety = self.security_auditor.run_safety(dependencies or [])
+
+        report["security"] = {"bandit": s_bandit, "safety": s_safety}
+        security_penalty = s_bandit["score_penalty"] + s_safety["score_penalty"]
+
+        final_score = max(
+            0, 100 - linter_penalty - formatter_penalty - security_penalty
+        )
         report["final_score"] = int(final_score)
 
         if final_score >= 80:

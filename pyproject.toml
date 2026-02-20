@@ -1,15 +1,13 @@
 [project]
-name = "mcp-core"
+name = "function-store-mcp"
 version = "0.1.0"
-description = "Python Function Vector Store MCP Server (Core Edition)"
+description = "Draft-First Function Store MCP Server"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=0.1.0",
     "numpy",
     "duckdb",
     "fastembed>=0.2.0", # Local Embeddings (ONNX)
-    "llama-cpp-python>=0.2.0", # Local LLM (GGUF)
-    "huggingface_hub", # For model downloads
     "psutil", # For process management
     "tqdm>=4.66.0", # Fix for TMonitor import error
     "pyinstaller>=6.3.0",
@@ -18,18 +16,21 @@ dependencies = [
     "keyring", # For secure storage of API keys
     "ruff>=0.1.0", # Quality Gate: Linter & Formatter
     "pytest>=8.0.0", # Testing
-    "python-dotenv>=1.0.0",
     "fastapi",
     "httpx",
     "pytest-asyncio",
+    "google-genai",
+    "bandit", # Security: Static analysis
+    "safety", # Security: Dependency vulnerability check
 ]
 
 [project.scripts]
-mcp-core = "mcp_core.server:main"
+mcp-server-function-store = "mcp_core.server:main"
 
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+exclude = ["mcp_servers", ".gemini", ".agent", ".venv", "env_test_draft"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

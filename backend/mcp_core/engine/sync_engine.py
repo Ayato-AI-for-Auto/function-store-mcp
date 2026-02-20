@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from mcp_core.core import config
-from mcp_core.core.database import get_db_connection
+from mcp_core.core.database import DBWriteLock, get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -79,35 +79,36 @@ class GitHubSyncEngine:
         if not self.functions_dir.exists():
             return 0
 
-        conn = get_db_connection()
-        try:
-            for json_file in self.functions_dir.glob("*.json"):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+        with DBWriteLock():
+            conn = get_db_connection()
+            try:
+                for json_file in self.functions_dir.glob("*.json"):
+                    try:
+                        with open(json_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
 
-                    name = data.get("name")
-                    if not name:
-                        continue
+                        name = data.get("name")
+                        if not name:
+                            continue
 
-                    # Check local version
-                    row = conn.execute(
-                        "SELECT version FROM functions WHERE name = ?", (name,)
-                    ).fetchone()
-                    local_version = row[0] if row else -1
-                    remote_version = data.get("version", 0)
-
-                    if remote_version > local_version:
-                        logger.info(
-                            f"Sync: Updating '{name}' (v{local_version} -> v{remote_version})"
-                        )
-                        self._upsert_function(conn, data)
-                        count += 1
-                except Exception as fe:
-                    logger.error(f"Sync: Failed to parse {json_file.name}: {fe}")
-            conn.commit()
-        finally:
-            conn.close()
+                        # If code or description changed, update
+                        res = conn.execute(
+                            "SELECT code, description FROM functions WHERE name = ?",
+                            (name,),
+                        ).fetchone()
+                        if (
+                            not res
+                            or res[0] != data.get("code")
+                            or res[1] != data.get("description")
+                        ):
+                            logger.info(f"Sync: Updating '{name}' (detected changes)")
+                            self._upsert_function(conn, data)
+                            count += 1
+                    except Exception as fe:
+                        logger.error(f"Sync: Failed to parse {json_file.name}: {fe}")
+                conn.commit()
+            finally:
+                conn.close()
 
         logger.info(f"Sync: Pull complete. Updated {count} functions.")
         return count
@@ -138,18 +139,15 @@ class GitHubSyncEngine:
             conn.execute(
                 """
                 UPDATE functions SET 
-                    code = ?, description = ?, description_en = ?, description_jp = ?, 
-                    tags = ?, metadata = ?, version = ?, updated_at = ?
+                    code = ?, description = ?, 
+                    tags = ?, metadata = ?, updated_at = ?
                 WHERE id = ?
             """,
                 (
                     data["code"],
                     data.get("description", ""),
-                    data.get("description_en"),
-                    data.get("description_jp"),
                     tags_json,
                     meta_json,
-                    data["version"],
                     now,
                     fid,
                 ),
@@ -157,18 +155,15 @@ class GitHubSyncEngine:
         else:
             conn.execute(
                 """
-                INSERT INTO functions (name, code, description, description_en, description_jp, tags, metadata, version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO functions (name, code, description, tags, metadata, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     data["name"],
                     data["code"],
                     data.get("description", ""),
-                    data.get("description_en"),
-                    data.get("description_jp"),
                     tags_json,
                     meta_json,
-                    data["version"],
                     now,
                     now,
                 ),
@@ -180,7 +175,7 @@ class GitHubSyncEngine:
             return False
 
         logger.info(f"Sync: Pushing '{name}' to Hub...")
-        conn = get_db_connection(read_only=True)
+        conn = get_db_connection(read_only=False)
         try:
             if not self._export_to_cache(conn, name):
                 logger.error(f"Sync: Function '{name}' not found locally.")
@@ -216,7 +211,7 @@ class GitHubSyncEngine:
             return False
 
         logger.info("Sync: Publishing all local functions to Hub...")
-        conn = get_db_connection(read_only=True)
+        conn = get_db_connection(read_only=False)
         try:
             rows = conn.execute(
                 "SELECT name FROM functions WHERE status != 'deleted'"
@@ -236,7 +231,7 @@ class GitHubSyncEngine:
         """Helper to export a single function to the local cache dir."""
         row = conn.execute(
             """
-            SELECT name, code, version, description, description_en, description_jp, tags, metadata 
+            SELECT name, code, description, tags, metadata, test_cases 
             FROM functions WHERE name = ?
         """,
             (name,),
@@ -244,15 +239,14 @@ class GitHubSyncEngine:
         if not row:
             return False
 
-        meta = json.loads(row[7]) if row[7] else {}
+        # row indices: 0=name, 1=code, 2=description, 3=tags, 4=metadata, 5=test_cases
+        meta = json.loads(row[4]) if row[4] else {}
         data = {
             "name": row[0],
             "code": row[1],
-            "version": row[2],
-            "description": row[3],
-            "description_en": row[4],
-            "description_jp": row[5],
-            "tags": json.loads(row[6]) if row[6] else [],
+            "description": row[2],
+            "tags": json.loads(row[3]) if row[3] else [],
+            "test_cases": json.loads(row[5]) if row[5] else [],
             "dependencies": meta.get("dependencies", []),
             "quality_score": meta.get("quality_score", 0),
             "updated_at": datetime.now().isoformat(),
@@ -273,9 +267,7 @@ class GitHubSyncEngine:
                 index.append(
                     {
                         "name": data["name"],
-                        "version": data["version"],
-                        "description_en": data.get("description_en", ""),
-                        "description_jp": data.get("description_jp", ""),
+                        "description": data.get("description", ""),
                         "tags": data.get("tags", []),
                     }
                 )

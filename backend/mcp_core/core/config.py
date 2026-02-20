@@ -1,15 +1,30 @@
 import json
 import os
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Load .env file
-load_dotenv()
 
 # Base Paths
-BASE_DIR = Path(__file__).parent.parent.parent
-DATA_DIR = Path(os.getenv("FS_DATA_DIR", BASE_DIR / "data"))
+def get_base_dir():
+    """Returns the base directory of the application."""
+    if getattr(sys, "frozen", False):
+        # Running as a bundled .exe
+        return Path(sys.executable).parent
+    # Running in development
+    return Path(__file__).parent.parent.parent
+
+
+BASE_DIR = get_base_dir()
+
+# Data persistence strategy:
+# - Development: Use local 'data' folder
+# - Frozen: Use %APPDATA%/FunctionStore to avoid data loss during app updates
+if getattr(sys, "frozen", False):
+    appdata = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+    DATA_DIR = appdata / "FunctionStore"
+else:
+    DATA_DIR = Path(os.getenv("FS_DATA_DIR", BASE_DIR / "data"))
+
 SETTINGS_PATH = DATA_DIR / "settings.json"
 
 # Ensure directories exist
@@ -30,10 +45,6 @@ def get_setting(key: str, default=None):
     return _settings.get(key) or os.getenv(key, default)
 
 
-# Derived Paths
-ENVS_DIR = Path(os.getenv("FS_ENVS_DIR", BASE_DIR / ".mcp_envs"))
-ENVS_DIR.mkdir(parents=True, exist_ok=True)
-
 # Database Paths
 DB_PATH = DATA_DIR / get_setting("FS_DB_NAME", "functions.duckdb")
 API_KEYS_DB_PATH = DATA_DIR / get_setting("FS_API_KEYS_DB_NAME", "api_keys.duckdb")
@@ -43,21 +54,22 @@ HOST = get_setting("FS_HOST", "0.0.0.0")
 PORT = int(get_setting("FS_PORT", "8001"))
 TRANSPORT = get_setting("FS_TRANSPORT", "stdio")
 
-# Local AI Config
+# AI Strategy Config
+# FS_MODEL_TYPE: "local" (FastEmbed) or "gemini" (Google)
+MODEL_TYPE = get_setting("FS_MODEL_TYPE", "local")
+
 EMBEDDING_MODEL_ID = get_setting(
-    "FS_EMBEDDING_MODEL_ID", "jinaai/jina-embeddings-v2-base-code"
+    "FS_EMBEDDING_MODEL_ID",
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
 )
-LLM_MODEL_ID = get_setting("FS_LLM_MODEL_ID", "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF")
-GGUF_FILENAME = get_setting("FS_GGUF_FILENAME", "qwen2.5-coder-3b-instruct-q4_k_m.gguf")
+
+GEMINI_API_KEY = get_setting("FS_GEMINI_API_KEY", "")
+
 
 # Models Cache Directory
 CACHE_DIR = DATA_DIR / "models"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Quality Gate Config (Local AI)
-# We use the same LLM for both description and quality scoring if needed
-QUALITY_GATE_MODEL = get_setting("FS_QUALITY_GATE_MODEL", LLM_MODEL_ID)
-DESCRIPTION_MODEL = get_setting("FS_DESCRIPTION_MODEL", LLM_MODEL_ID)
 
 # Sync Config (GitHub Serverless DB)
 SYNC_ENABLED = get_setting("FS_SYNC_ENABLED", "True").lower() == "true"

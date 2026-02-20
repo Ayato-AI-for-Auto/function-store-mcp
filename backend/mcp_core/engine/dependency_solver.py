@@ -1,5 +1,8 @@
 import ast
+import logging
 from typing import List, Set
+
+logger = logging.getLogger(__name__)
 
 
 class DependencySolver:
@@ -79,6 +82,28 @@ class DependencySolver:
             final_packages.append(mapped)
 
         return sorted(list(set(final_packages)))
+
+    @staticmethod
+    def identify_internal_dependencies(
+        code: str, known_functions: Set[str]
+    ) -> List[str]:
+        """Identifies calls to other functions already in the store."""
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return []
+
+        calls: Set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in known_functions:
+                        calls.add(node.func.id)
+                elif isinstance(node.func, ast.Attribute):
+                    # Handle cases like math.sqrt (but we want local functions)
+                    pass
+
+        return sorted(list(calls))
 
 
 if __name__ == "__main__":

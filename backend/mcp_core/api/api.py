@@ -6,9 +6,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mcp_core.auth import verify_api_key
 from mcp_core.engine.logic import (
-    do_get_history_impl as _do_get_history_impl,
-)
-from mcp_core.engine.logic import (
     do_get_impl as _do_get_impl,
 )
 from mcp_core.engine.logic import (
@@ -38,7 +35,7 @@ app.add_middleware(
 async def get_current_user(x_api_key: Optional[str] = Header(None)):
     """
     Verify API key from header.
-    TODO (Horiemon Reform): For Public Web UI, we might need a read-only public key or bypass.
+    TODO : For Public Web UI, we might need a read-only public key or bypass.
     Current logic enforces strict auth, which is good for the "Private Vault" phase.
     """
     if not x_api_key:
@@ -127,17 +124,6 @@ async def search(query: SearchQuery, user_id: str = Depends(get_current_user)):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/functions/{function_name}/history")
-async def get_history(function_name: str, user_id: str = Depends(get_current_user)):
-    """Get version history for a function."""
-    try:
-        # Positional call to bypass keyword injection
-        history = _do_get_history_impl(function_name)
-        return history
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
 
 
 # --- Startup ---
